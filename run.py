@@ -103,9 +103,7 @@ def main():
     outcome = run_screen(repo, pr, token=token)
 
     candidates, error = (), ''
-    if outcome.status == 'could-not-screen':
-        error = outcome.detail
-    elif outcome.status == 'candidates':
+    if outcome.status == 'candidates':
         candidates = outcome.candidates
         try:
             deliver(repo, pr, head_sha, candidates)
@@ -115,6 +113,11 @@ def main():
             if stderr:
                 reason += f': {stderr.strip()}'
             error = f'the review could not be posted: {reason}'
+    elif outcome.status == 'could-not-screen':
+        error = outcome.detail
+    elif outcome.status != 'clean':
+        # Fail closed: an unknown status must never read as a clean screen.
+        error = f'the screen reported an unknown status {outcome.status!r}'
 
     _, _, truncated = upsert_status(gh, repo, pr, head_sha, candidates,
                                     clean=outcome.status == 'clean', error=error or None)

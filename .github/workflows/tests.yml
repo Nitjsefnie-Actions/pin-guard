@@ -23,9 +23,8 @@ name: tests
 # COVERAGE_PROCESS_START. On the other cell the step is skipped and the
 # suite runs unmeasured. The floor lives in .github/ci-thresholds.json and
 # is never restated here; the summary renders whether or not the gate
-# fails. The seed holds the measured 97.3 with the floor one calibration
-# gap (the ratchet script's own 1.5) below it, so first-run variance
-# greens and only a rise beyond the hysteresis raises.
+# fails. The seed is one calibration gap below the measured value, so
+# first-run variance greens and only a rise beyond the hysteresis raises.
 #
 # The same measurement is also reported per change: the measured cell writes
 # the XML form of it, the pull-request-only `diff-coverage` job diffs the
