@@ -69,17 +69,20 @@ def _own_author(node, bot_login):
 def current_bot_comments(gh, repo, pr, head_sha, bot_login):
     """The action's own inline comments still current at `head_sha`.
 
-    Reads the PR's inline comments and its reviews (both `--paginate`),
-    keeps the comments whose author is `bot_login` AND whose parent review
+    Reads the PR's inline comments and its reviews (both `--paginate
+    --slurp`, which prints every page's array back-to-back as one array of
+    pages — a listing read whole), flattens the pages, and keeps the
+    comments whose author is `bot_login` AND whose parent review
     — matched by `pull_request_review_id` — is itself the action's own
     (bot author, `MARKER` on a line of its own), whose `commit_id` equals
     `head_sha` and whose `in_reply_to_id` is null. Each returned dict is
     the comment's API object plus `quoted_text`, the exact line text read
     from the hidden field `render_candidate` writes.
     """
-    comments = json.loads(gh('api', f'repos/{repo}/pulls/{pr}/comments', '--paginate'))
-    reviews = {item['id']: item
-               for item in json.loads(gh('api', f'repos/{repo}/pulls/{pr}/reviews', '--paginate'))}
+    comments = [item for page in json.loads(gh('api', f'repos/{repo}/pulls/{pr}/comments', '--paginate', '--slurp'))
+                for item in page]
+    reviews = {item['id']: item for page in json.loads(gh('api', f'repos/{repo}/pulls/{pr}/reviews', '--paginate', '--slurp'))
+               for item in page}
     current = []
     for item in comments:
         source = reviews.get(item.get('pull_request_review_id'))

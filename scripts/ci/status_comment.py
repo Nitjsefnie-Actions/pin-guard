@@ -63,11 +63,13 @@ def _own_lines(body):
 def find_status(gh, repo, pr, bot_login):
     """The action's own sticky status comment, or None.
 
-    Reads `repos/{repo}/issues/{pr}/comments` with `--paginate` and returns
+    Reads `repos/{repo}/issues/{pr}/comments` with `--paginate --slurp`
+    (every page's array in one array of pages, flattened here) and returns
     the one comment authored by `bot_login` (login AND `type == 'Bot'`)
     whose body carries `STATUS_MARKER` on a line of its own.
     """
-    comments = json.loads(gh('api', f'repos/{repo}/issues/{pr}/comments', '--paginate'))
+    comments = [item for page in json.loads(gh('api', f'repos/{repo}/issues/{pr}/comments', '--paginate', '--slurp'))
+                for item in page]
     for item in comments:
         user = item.get('user') or {}
         if user.get('login') == bot_login and user.get('type') == 'Bot' \
@@ -78,6 +80,10 @@ def find_status(gh, repo, pr, bot_login):
 
 def parse_block(body):
     """The hidden block's parsed JSON, read the way a consumer reads it.
+
+    This reader exists for this module's own round-trip tests (and any
+    in-repo use); consumers outside the repository are still told to read
+    the block themselves — this repository only writes it.
 
     Finds the block after `STATUS_MARKER`'s line, unescapes it, parses the
     JSON, and returns the dict — `{"head_sha", "count", "candidates"}`, or
