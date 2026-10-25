@@ -18,5 +18,11 @@
 !tests/
 tests/*
 !tests/test_check_pin_tests.py
+!tests/test_screen_run.py
+!scripts/
+scripts/*
+!scripts/ci/
+scripts/ci/*
+!scripts/ci/screen_run.py
 !pytest.ini
 !requirements-test.txt
