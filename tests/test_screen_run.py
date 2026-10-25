@@ -9,6 +9,7 @@ from unittest import mock
 
 KIT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 spec = importlib.util.spec_from_file_location('screen_run', os.path.join(KIT, 'scripts', 'ci', 'screen_run.py'))
+assert spec and spec.loader
 mod = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(mod)
 
@@ -111,7 +112,6 @@ class RunScreen(unittest.TestCase):
 
 def popen_double(record, code=None, out='', err=''):
     """A Popen double modeling one screen child (code None models a hang); the rest is refused."""
-    record = record
 
     class Popen:
         pid = 424242

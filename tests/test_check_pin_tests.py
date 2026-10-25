@@ -5,17 +5,18 @@ import unittest
 
 KIT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 spec = importlib.util.spec_from_file_location('check_pin_tests', os.path.join(KIT, 'check_pin_tests.py'))
+assert spec and spec.loader
 mod = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(mod)
 
 SHA = '721426819be9e05deb76d56364f671b87fa05fbf'
 
 
-def diff(path, *added, removed=()):
-    lines = [f'diff --git a/{path} b/{path}', f'--- a/{path}', f'+++ b/{path}', '@@ -1,1 +1,9 @@']
-    lines += [f'-{line}' for line in removed]
-    lines += [f'+{line}' for line in added]
-    return '\n'.join(lines) + '\n'
+def diff(path, *lines, removed=()):
+    rows = [f'diff --git a/{path} b/{path}', f'--- a/{path}', f'+++ b/{path}', '@@ -1,1 +1,9 @@']
+    rows += [f'-{line}' for line in removed]
+    rows += [f'+{line}' for line in lines]
+    return '\n'.join(rows) + '\n'
 
 
 class ParseWarnings(unittest.TestCase):
@@ -449,8 +450,12 @@ class WidenedFindings(unittest.TestCase):
         for kind, literal, line in cases:
             with self.subTest(kind=kind, line=line):
                 text = diff('tests/test_pins.py', line)
-                coupled = lambda path, k, kind=kind: k == kind  # noqa: E731
-                other = lambda path, k, kind=kind: k != kind  # noqa: E731
+
+                def coupled(_path, k, kind=kind):
+                    return k == kind
+
+                def other(_path, k, kind=kind):
+                    return k != kind
                 self.assertEqual([(p, n) for p, n, _ in mod.findings(text, (), None, {kind: {literal}}, coupled)],
                                  [('tests/test_pins.py', 1)])
                 self.assertEqual(mod.findings(text, (), None, {kind: {literal}}, other), [])
@@ -554,12 +559,12 @@ class Main(unittest.TestCase):
 
         out, err = io.StringIO(), io.StringIO()
         saved = mod._gh
-        mod._gh = fake_gh
+        setattr(mod, '_gh', fake_gh)
         try:
             with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
                 code = mod.main(['--repo', 'o/r', '--pr', '9'])
         finally:
-            mod._gh = saved
+            setattr(mod, '_gh', saved)
         return code, out.getvalue().splitlines(), err.getvalue().splitlines(), calls
 
     DOCKERFILE = f'FROM node:24.21.0-bookworm-slim@sha256:{DIGEST} AS deps\nFROM deps AS build\n'
@@ -637,7 +642,7 @@ class Main(unittest.TestCase):
 
     def test_workflow_sha_pins_still_come_from_the_head(self):
         wf = f'      - uses: o/claim@{SHA} # v1.0.0\n      - run: pip install ruff==0.8.4\n'
-        code, out, err, _ = self.run_main(
+        code, out, _, _ = self.run_main(
             diff('tests/test_wf.py', f'PIN = "{SHA}"', 'assert "ruff==0.8.4" in WF'),
             {'.github/workflows/c.yml': wf},
             {'tests/test_wf.py': 'WF = (ROOT / ".github/workflows/c.yml").read_text()\n'})
@@ -834,8 +839,6 @@ assert with_.get("results_format") == "sarif"''')],
                        "assert checkout['with']['persist-credentials'] == 0"):
             with self.subTest(source=source):
                 self.assertEqual(len(self.screen(source)), 1)
-
-
 
 
 # BASE 8a592ef verdicts measured once against these embedded patches; runtime reads
@@ -1044,7 +1047,7 @@ class FixRoundOne(unittest.TestCase):
                 self.assertEqual(len(self.screen(source)), 1)
 
     def test_differential_fixture_corpus(self):
-        old, actual, removed, added = set(), set(), set(), set()
+        old, actual, removed, gained = set(), set(), set(), set()
         for label, patch, base, exemptions, additions in FIX1_CORPUS:
             with self.subTest(shape=label):
                 observed = {n for _, n, _ in mod.findings(patch, {SHA}, lambda p: True)}
@@ -1052,11 +1055,11 @@ class FixRoundOne(unittest.TestCase):
                 old.update((label, n) for n in base)
                 actual.update((label, n) for n in observed)
                 removed.update((label, n) for n in exemptions)
-                added.update((label, n) for n in additions)
+                gained.update((label, n) for n in additions)
         self.assertEqual(actual & old, old - removed)
-        self.assertEqual(actual - old, added)
+        self.assertEqual(actual - old, gained)
         print(f'Differential: {len(FIX1_CORPUS)} shapes; {len(old)} base flags; '
-              f'{len(removed)} explicit exemptions; {len(added)} retained additions; '
+              f'{len(removed)} explicit exemptions; {len(gained)} retained additions; '
               f'{len(actual)} resulting flags')
 
 
@@ -1214,7 +1217,6 @@ assert families
                       '     for path in (ROOT / ".github/workflows").glob(\n'
                       '+        assert step["with"]["persist-credentials"] is False\n')
         self.assertEqual([n for _, n, _ in mod.findings(incomplete, (), lambda p: True)], [11])
-
 
     def test_split_workflow_path_couples_but_prose_does_not(self):
         line = 'assert checkout["with"] == {"persist-credentials": False}'
@@ -1458,7 +1460,7 @@ class WorkflowRunArtifactTests(unittest.TestCase):
         filtered = self.PR_GATE.replace("        for job", "        if path.name != 'ci.yml':\n            continue\n        for job")
         self.assert_listed(filtered)
         filtered_actions = self.PR_GATE.replace('    for name in action_paths:',
-            '    for name in action_paths:\n        if name != "local/action.yml":\n            continue')
+                                                '    for name in action_paths:\n        if name != "local/action.yml":\n            continue')
         self.assert_listed(filtered_actions)
 
     def test_live_ai_researcher_binding_and_near_misses(self):
@@ -1724,18 +1726,18 @@ for location, entries in bucket:
 
     def test_unrelated_filename_comparisons_do_not_filter_the_enumeration(self):
         self.assertEqual(self.screen(self.invariant('(ROOT / ".github/workflows").glob("*.yml")',
-                                                   body='    if outside.name == "ci.yml":\n        pass\n')), [])
+                                                    body='    if outside.name == "ci.yml":\n        pass\n')), [])
         # A content-based class filter still visits every path; the reader must
         # consume the path before the filter is classified.
         self.assertEqual(self.screen(self.invariant('(ROOT / ".github/workflows").glob("*.yml")',
-            body='    if "workflow_run" not in yaml.safe_load(candidate.read_text()).get("on", {}):\n        continue\n')), [])
+                                                    body='    if "workflow_run" not in yaml.safe_load(candidate.read_text()).get("on", {}):\n        continue\n')), [])
 
     def test_readers_and_workflow_helper_consume_paths_before_content_filters(self):
         for expression, needle in (('candidate.read_text()', '"workflow_run"'),
                                    ('candidate.read_bytes()', 'b"workflow_run"'),
                                    ('_workflow(candidate.name).get("on", {})', '"workflow_run"')):
             source = self.invariant('(ROOT / ".github/workflows").glob("*.yml")',
-                body=f'    if {needle} not in {expression}:\n        continue\n')
+                                    body=f'    if {needle} not in {expression}:\n        continue\n')
             self.assertEqual(self.screen(source), [], expression)
             self.assert_listed(source.replace(expression, 'candidate.name'))
 
@@ -1826,7 +1828,6 @@ for entry in bucket:
             self.assert_listed(source.replace('.glob("*.yml")', '.glob("ci*.yml")'))
             self.assert_listed(source.replace('github.event.workflow_run.id', 'secrets.RUN_ID'))
 
-
     DOCS_HUB = '''def test_every_checkout_disables_persisted_credentials():
     checkouts = [
         (path.name, job_name, step)
@@ -1848,7 +1849,7 @@ for entry in bucket:
     def star_near_miss(self, pattern):
         self.assert_listed(self.DOCS_HUB.replace('.glob("*")', f'.glob("{pattern}")'))
         self.assert_listed(self.DOCS_HUB.replace('(_REPO / ".github/workflows").glob("*")',
-                                              f'_REPO.glob(".github/workflows/{pattern}")'))
+                                                 f'_REPO.glob(".github/workflows/{pattern}")'))
 
     def test_star_rejects_ci_prefix_A02(self):
         self.star_near_miss('ci*')
@@ -1862,7 +1863,7 @@ for entry in bucket:
     def test_star_rejects_github_directory_A05(self):
         self.assert_listed(self.DOCS_HUB.replace('".github/workflows"', '".github"'))
         self.assert_listed(self.DOCS_HUB.replace('(_REPO / ".github/workflows").glob("*")',
-                                              '_REPO.glob(".github/*")'))
+                                                 '_REPO.glob(".github/*")'))
 
     def test_star_rejects_json_A06(self):
         self.star_near_miss('*.json')
@@ -1968,7 +1969,7 @@ for entry in bucket:
         source = self.control_case().replace('                assert entry', '                break\n                assert entry')
         self.assert_listed(source)
         self.assertEqual(self.screen(source.replace('                break',
-            '                if entry.get("stop"):\n                    break')), [])
+                                                    '                if entry.get("stop"):\n                    break')), [])
 
     def test_path_while_narrows_enumeration(self):
         self.assert_listed(self.control_case('while candidate.name != "ci.yml":\n    break'))
@@ -2031,9 +2032,9 @@ for entry in bucket:
 
     def test_content_alias_does_not_gain_path_dependency(self):
         source = self.control_case().replace('                assert entry',
-            '                action, pin = entry.get("uses", "").split("@")\n'
-            '                if action != "actions/checkout":\n                    continue\n'
-            '                assert entry')
+                                             '                action, pin = entry.get("uses", "").split("@")\n'
+                                             '                if action != "actions/checkout":\n                    continue\n'
+                                             '                assert entry')
         self.assertEqual(self.screen(source), [])
         self.assertEqual(self.screen(self.PR_GATE), [])
         self.assertEqual(self.screen(self.AI_RESEARCHER), [])
@@ -2149,7 +2150,6 @@ class ExecutedAndDerivedReads(unittest.TestCase):
         ):
             with self.subTest(source=source):
                 self.assertEqual(len(self.screen(source)), 1)
-
 
     STEPS = ('steps = _load(SIZE_BASELINE)["jobs"]["size-baseline"]["steps"]\n'
              'stage = next(s for s in steps if s.get("id") == "stage")\n'

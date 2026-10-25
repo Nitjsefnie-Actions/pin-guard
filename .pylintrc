@@ -1,0 +1,48 @@
+# Defect-oriented pylint policy: this gate exists to find correctness
+# defects, not style opinions. Style, convention and refactor checks are
+# OFF and error/warning checks are ON, so a red lint build is always a
+# finding about the code's behaviour and never about its formatting.
+# Formatting itself stays with pycodestyle, whose exit code — not any
+# score line — is that gate's verdict.
+#
+# The list below turns off the style categories (C = convention,
+# R = refactor, I = information) wholesale, then names exactly the
+# messages whose findings in this tree are the code's deliberate shape,
+# each with its sites: a real tree forced every line. The E/W categories
+# are never named in an `enable=` afterwards — a later category-level
+# enable re-enables every specific message listed before it — so what
+# stays off stays off. Inheriting a longer list from another project
+# would read as an audit trail while suppressing nothing here; no entry
+# below is dead.
+
+[MASTER]
+
+[MESSAGES CONTROL]
+# subprocess-run-check — the screen and the CI scripts inspect returncode
+#   themselves and print their own failure diagnostics; check=True would
+#   raise before the assertion that explains what actually went wrong.
+# broad-exception-caught — the screen's whole contract is fail-closed
+#   delivery: check_pin_tests._screen's top-level catch turns any crash
+#   into the "could not screen" exit, and run.py's delivery catch states
+#   the failure in the status comment instead of dying silently. Both
+#   sites re-raise nothing and both comments say so.
+# protected-access — the suite drives the module's own private helpers
+#   directly (check_pin_tests._parse, check_pin_tests._gh): the ported
+#   screen's internals are that suite's contract, and no second consumer
+#   exists.
+disable=C,
+    R,
+    I,
+    subprocess-run-check,
+    broad-exception-caught,
+    protected-access
+
+[IMPORTS]
+
+# unused-argument — submit_review's bot_login is the seam-parallel
+#   parameter: it names the identity the posted review carries, which
+#   current_bot_comments reads back later; the wire payload derives
+#   authorship from the token (the function's docstring says so), so the
+#   parameter is accepted and unused here by design, and the name is part
+#   of the documented signature.
+ignored-argument-names=_.*|^ignored_|^unused_|^bot_login$

@@ -133,6 +133,7 @@ import sys
 import textwrap
 import warnings
 
+
 def _parse(text):
     """ast.parse of a scanned repo's code, without its SyntaxWarnings ("\\$" in a
     non-raw string) burying the verdict on stderr."""
@@ -353,7 +354,7 @@ def _pin_shape(text, bindings):
     except (SyntaxError, IndexError):
         # `.not.toMatch(...)` asserts the shape is absent, which pins nothing.
         return bool(re.match(r'expect\s*\(', text) and re.search(r'(?<!\.not)\.toMatch\(\s*/(?:\\.|[^/\\\n])*?(?:\[(?:0-9a-f|a-f0-9)\]\{40\}'
-                              r'|sha256:\[(?:0-9a-f|a-f0-9)\]\{64\})', text))
+                                                                 r'|sha256:\[(?:0-9a-f|a-f0-9)\]\{64\})', text))
     if isinstance(statement, ast.Assert):
         node = statement.test
         if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.Not):
@@ -376,7 +377,7 @@ def _step_order(test, bindings):
             and len(test.args) == 1 and isinstance(test.args[0], ast.GeneratorExp)):
         order = test.args[0].elt
     if not (isinstance(order, ast.Compare) and all(isinstance(op, (ast.Lt, ast.LtE, ast.Gt, ast.GtE))
-                                                 for op in order.ops)):
+                                                   for op in order.ops)):
         return False
     if _field(order.left, bindings) or any(_field(p, bindings) for p in order.comparators if not isinstance(p, ast.Call)):
         return False
@@ -405,10 +406,12 @@ def _invariant_test(statement):
             and isinstance(statement.value.func, ast.Attribute)):
         return None
     call = statement.value
+    func = call.func
+    assert isinstance(func, ast.Attribute)
     operators = {'assertIs': ast.Is, 'assertEqual': ast.Eq, 'assertIn': ast.In}
-    if call.func.attr in operators and len(call.args) >= 2:
-        return ast.Compare(left=call.args[0], ops=[operators[call.func.attr]()], comparators=[call.args[1]])
-    if call.func.attr == 'assertTrue' and call.args:
+    if func.attr in operators and len(call.args) >= 2:
+        return ast.Compare(left=call.args[0], ops=[operators[func.attr]()], comparators=[call.args[1]])
+    if func.attr == 'assertTrue' and call.args:
         return call.args[0]
     return None
 
@@ -515,10 +518,10 @@ class _Enumeration:
                 directory = '/'.join(parts)
                 pattern_value = self.value(node.args[0], env)
                 pattern = pattern_value[1][0] if (isinstance(pattern_value, tuple)
-                                                and pattern_value[0] == 'path' and len(pattern_value[1]) == 1) else None
+                                                  and pattern_value[0] == 'path' and len(pattern_value[1]) == 1) else None
                 if (directory == '.github/workflows' and pattern in ('*.yml', '*.yaml', '*.y*ml', '*')
                         or not directory and pattern in ('.github/workflows/*.yml', '.github/workflows/*.yaml',
-                                                        '.github/workflows/*.y*ml', '.github/workflows/*')
+                                                         '.github/workflows/*.y*ml', '.github/workflows/*')
                         or directory in ('', '.github/actions') and func.attr == 'rglob' and pattern == 'action.yml'):
                     return ('collection', frozenset({'@path'}))
                 return None
@@ -710,13 +713,15 @@ class _Enumeration:
                   and isinstance(statement.value.func, ast.Attribute)
                   and statement.value.func.attr in ('append', 'extend') and len(statement.value.args) == 1):
                 call = statement.value
-                current = self.value(call.func.value, env)
+                func = call.func
+                assert isinstance(func, ast.Attribute)
+                current = self.value(func.value, env)
                 extra = self.value(call.args[0], env)
-                if call.func.attr == 'append':
+                if func.attr == 'append':
                     extra = ('collection', extra)
                 else:
                     extra = self.collection(extra)
-                self.bind(call.func.value, self.merge(current, extra), env)
+                self.bind(func.value, self.merge(current, extra), env)
             elif (isinstance(statement, ast.Expr) and isinstance(statement.value, ast.Call)
                   and isinstance(statement.value.func, ast.Attribute)):
                 self.bind(statement.value.func.value, None, env)
@@ -807,7 +812,9 @@ def _python_assertion(text, bindings):
           and isinstance(statement.value.func, ast.Attribute)
           and statement.value.func.attr.startswith('assert')):
         call = statement.value
-        if (call.func.attr in ('assertFalse', 'assertNotIn', 'assertIsNone', 'assertIsNotNone')
+        func = call.func
+        assert isinstance(func, ast.Attribute)
+        if (func.attr in ('assertFalse', 'assertNotIn', 'assertIsNone', 'assertIsNotNone')
                 and not _VERSION_REF.search(text)):
             return False
         operands = call.args[:2]
@@ -816,7 +823,7 @@ def _python_assertion(text, bindings):
     # A classifier given a literal action dictionary is testing fixture data.
     if any(isinstance(p, ast.Call) and any(
             isinstance(arg, ast.Dict) and any(isinstance(key, ast.Constant) and key.value == 'uses'
-                                             for key in arg.keys) for arg in p.args)
+                                              for key in arg.keys) for arg in p.args)
            and all(_literal(arg, bindings) for arg in p.args) for p in operands
            ) and not any(_field(operand, bindings) for operand in operands):
         return False
@@ -900,12 +907,16 @@ def _statements(rows):
             current, depth = None, 0
             continue
         starts_assertion = re.match(r'\s*(?:assert\s|self\.assert\w*\(|expect\s*\()', text)
-        if (current and current[0] == path and depth > 0 and (len(current[2]) < _SPAN_MAX
-                    or re.fullmatch(r'\s*(?:"(?:\\.|[^"\\])*"|\'(?:\\.|[^\'\\])*\')\s*\)?\s*', text))
+        span_path, span_texts = None, []
+        if current is not None:
+            span_path, _, span_texts = current
+        if (span_path == path and depth > 0
+                and (len(span_texts) < _SPAN_MAX
+                     or re.fullmatch(r'\s*(?:"(?:\\.|[^"\\])*"|\'(?:\\.|[^\'\\])*\')\s*\)?\s*', text))
                 and not starts_assertion):
-            current[2].append(text.strip())
+            span_texts.append(text.strip())
         else:
-            if current:
+            if current is not None:
                 out.append(current)
             current, depth = [path, line, [text.strip()]], 0
             if not (_ASSERTION.search(text) or re.match(r'\s*\w+\s*=', text)):
@@ -935,7 +946,9 @@ def _without_message(text):
             and isinstance(statement.value.func, ast.Attribute)
             and statement.value.func.attr.startswith('assert')):
         call = statement.value
-        count = 1 if call.func.attr in ('assertTrue', 'assertFalse', 'assertIsNone', 'assertIsNotNone') else 2
+        func = call.func
+        assert isinstance(func, ast.Attribute)
+        count = 1 if func.attr in ('assertTrue', 'assertFalse', 'assertIsNone', 'assertIsNotNone') else 2
         call.args = call.args[:count]
         call.keywords = [arg for arg in call.keywords if arg.arg != 'msg']
         return ast.unparse(call)
@@ -1117,7 +1130,8 @@ def dockerfile_pins(text):
         if words[0].upper() != 'FROM' or not rest:
             continue
         unresolved = []
-        ref = _ARG_REF.sub(lambda m: args.get(m.group(1) or m.group(3), m.group(2))
+        ref = _ARG_REF.sub(lambda m, args=args, unresolved=unresolved:
+                           args.get(m.group(1) or m.group(3), m.group(2))
                            or unresolved.append(m.group(0)) or '', rest[0])
         if unresolved:
             continue
@@ -1213,10 +1227,11 @@ def findings(diff_text, pinned=(), reads_workflows=None, literals=None, reads_so
             except CannotScreen:
                 pass  # a hunk of package.json is no whole document; main reads the head file whole
     if reads_source is None:
-        def reads_source(path, kind):
+        def default_reads_source(path, kind):
             if kind == 'workflow' and reads_workflows:
                 return reads_workflows(path)
             return couples('\n'.join(texts.get(path, ())), kind)
+        reads_source = default_reads_source
     coupled = {}  # (path, kind) -> bool: each file is judged once per source, not once per statement
     matchers = {kind: _matcher(values) for kind, values in held.items() if values}
     out = []
@@ -1248,7 +1263,7 @@ def findings(diff_text, pinned=(), reads_workflows=None, literals=None, reads_so
         if (path, line) in invariants:
             on_step = False
         if on_step or coupled[path, 'pin-shape'] and _pin_shape(subject, pattern_bindings) or any(coupled[path, kind] and any(m.search(q) for q in _quoted(text))
-                          for kind, m in matchers.items()):
+                                                                                                  for kind, m in matchers.items()):
             out.append((path, line, text))
     return out
 

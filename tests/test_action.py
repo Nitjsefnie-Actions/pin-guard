@@ -18,6 +18,7 @@ KIT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 def _load(name, *path):
     spec = importlib.util.spec_from_file_location(name, os.path.join(KIT, *path))
+    assert spec and spec.loader
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module

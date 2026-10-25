@@ -2,7 +2,7 @@ name: pr gate
 # pull_request_target: a fork's pull_request token is read-only, so its
 # comment and close would silently do nothing. The pinned action reads the
 # template at the PR's base SHA and runs no pull-request code.
-on:
+on: # zizmor: ignore[dangerous-triggers]
   pull_request_target:
     types: [opened, edited, reopened, ready_for_review]
 permissions:
@@ -23,7 +23,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: Nitjsefnie-Actions/pr-gate@6f3222bfc9c61baa3961d49c98dd3c949d0b5079 # v2.3.0
+      - uses: Nitjsefnie-Actions/pr-gate@88281cab989fa0951713be42f9ae4c26683f7719 # v2.4.0
         with:
           github-token: ${{ github.token }}
           repository: ${{ github.repository }}

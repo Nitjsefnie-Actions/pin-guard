@@ -7,6 +7,7 @@ import unittest
 
 KIT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 spec = importlib.util.spec_from_file_location('review_submit', os.path.join(KIT, 'scripts', 'ci', 'review_submit.py'))
+assert spec and spec.loader
 mod = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(mod)
 
@@ -208,7 +209,7 @@ class PlanComments(unittest.TestCase):
     def test_an_outdated_prior_leaves_its_candidate_new(self):
         # The prior comment anchors on an earlier head, so current_bot_comments
         # does not report it and the candidate is planned again.
-        gh, got_current = CurrentBotComments('current').current(
+        _, got_current = CurrentBotComments('current').current(
             [comment(1, 10, 'tests/x.py', 7, mod.render_candidate('x == "1"'), commit_id='b' * 40)],
             [review(10, BODY)])
         self.assertEqual(got_current, [])

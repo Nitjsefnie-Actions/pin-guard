@@ -1,0 +1,102 @@
+{
+  ".github/dependabot.yml": [
+    931,
+    1347
+  ],
+  ".github/scripts/diff_coverage.py": [
+    4662,
+    11570
+  ],
+  ".github/workflows/actionlint.yml": [
+    3680,
+    5683
+  ],
+  ".github/workflows/audit.yml": [
+    3604,
+    5610
+  ],
+  ".github/workflows/claim.yml": [
+    41,
+    597
+  ],
+  ".github/workflows/codeql.yml": [
+    1770,
+    2671
+  ],
+  ".github/workflows/comment-share.yml": [
+    254,
+    1754
+  ],
+  ".github/workflows/coverage-comment.yml": [
+    3309,
+    9789
+  ],
+  ".github/workflows/pr-gate.yml": [
+    403,
+    1059
+  ],
+  ".github/workflows/ratchet-push.yml": [
+    3006,
+    11284
+  ],
+  ".github/workflows/scorecard.yml": [
+    593,
+    1587
+  ],
+  ".github/workflows/secrets.yml": [
+    2162,
+    2863
+  ],
+  ".github/workflows/tests.yml": [
+    10314,
+    17438
+  ],
+  "action.yml": [
+    172,
+    1007
+  ],
+  "check_pin_tests.py": [
+    11801,
+    52415
+  ],
+  "run.py": [
+    1338,
+    3924
+  ],
+  "scripts/ci/aggregate_gate.py": [
+    87,
+    717
+  ],
+  "scripts/ci/review_submit.py": [
+    3647,
+    6786
+  ],
+  "scripts/ci/screen_run.py": [
+    1161,
+    2987
+  ],
+  "scripts/ci/status_comment.py": [
+    3100,
+    5842
+  ],
+  "tests/test_action.py": [
+    1688,
+    9981
+  ],
+  "tests/test_check_pin_tests.py": [
+    4261,
+    125528
+  ],
+  "tests/test_review_submit.py": [
+    1780,
+    11676
+  ],
+  "tests/test_screen_run.py": [
+    723,
+    6008
+  ],
+  "tests/test_status_comment.py": [
+    1707,
+    10438
+  ]
+}
