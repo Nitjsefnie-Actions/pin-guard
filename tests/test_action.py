@@ -244,10 +244,39 @@ class Action(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertIn('PIN_GUARD_REPO', err)
         self.assertIn('PIN_GUARD_PR_NUMBER', err)
-        for missing in ('PIN_GUARD_PR_NUMBER',):
-            code, err = self.action(gh, screen, env={missing: ''})
-            self.assertEqual(code, 1)
-            self.assertIn(missing, err)
+        code, err = self.action(gh, screen, env={'PIN_GUARD_PR_NUMBER': ''})
+        self.assertEqual(code, 1)
+        self.assertIn('PIN_GUARD_PR_NUMBER', err)
+
+    def test_a_non_numeric_pr_number_fails_before_any_github_call_or_screen(self):
+        gh, screen = Refuse(), Refuse()
+        code, err = self.action(gh, screen, env={'PIN_GUARD_PR_NUMBER': 'nine'})
+        self.assertEqual(code, 1)
+        self.assertIn('PIN_GUARD_PR_NUMBER', err)
+        self.assertIn('nine', err)
+
+    def test_an_unknown_screen_status_fails_closed_through_the_status_comment(self):
+        gh = Gh(status_find_call(),
+                status_post(status_body_check('the screen reported an unknown status')))
+        code, _ = self.action(gh, Screen(screen_run.ScreenOutcome('mystery', (), '')))
+        self.assertEqual(code, 1)
+        self.assertEqual([args for args, _ in gh.calls if '--method' in args],
+                         [status_post(status_body_check())[0]])
+
+    def test_a_prior_status_comment_is_edited_in_place_not_posted_again(self):
+        earlier_body = status_comment.status_body('b' * 40, [('tests/old.py', 1, 'old == "1"')])[0]
+        earlier = {'id': 7, 'user': {'login': status_comment.BOT_LOGIN, 'type': 'Bot'},
+                   'body': earlier_body}
+        patch_args = ('api', f'repos/{REPO}/issues/{PR}/comments/7', '--method', 'PATCH', '--input', '-')
+        gh = Gh(status_find_call([earlier]),
+                (patch_args,
+                 status_body_check(f'Pin-test screen of head {SHA}', 'This head is clean'),
+                 json.dumps({'html_url': 'https://example.com/s/7'})))
+        code, _ = self.action(gh, Screen(screen_run.ScreenOutcome('clean', (), '')))
+        self.assertEqual(code, 0)
+        # The one write is the PATCH at the earlier comment's id, carrying the
+        # new head's body; a POST would be an unmodeled call the double refuses.
+        self.assertEqual([args for args, _ in gh.calls if '--method' in args], [patch_args])
 
     def test_a_delivery_exception_still_reports_the_screen_outcome_and_exits_1(self):
         error = subprocess.CalledProcessError(1, ['gh'], stderr='gh: GitHub surface refused the write')
