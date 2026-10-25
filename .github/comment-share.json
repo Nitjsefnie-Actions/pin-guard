@@ -44,8 +44,8 @@
     2863
   ],
   ".github/workflows/tests.yml": [
-    10630,
-    18679
+    10587,
+    18636
   ],
   "action.yml": [
     172,
@@ -56,8 +56,8 @@
     52415
   ],
   "run.py": [
-    1338,
-    3924
+    1393,
+    4066
   ],
   "scripts/ci/review_submit.py": [
     3647,
@@ -72,8 +72,8 @@
     5842
   ],
   "tests/test_action.py": [
-    1688,
-    9981
+    1804,
+    11381
   ],
   "tests/test_review_submit.py": [
     1780,
