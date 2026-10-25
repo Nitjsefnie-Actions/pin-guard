@@ -14,3 +14,9 @@
 .github/workflows/*
 !.github/workflows/claim.yml
 !.github/workflows/pr-gate.yml
+!check_pin_tests.py
+!tests/
+tests/*
+!tests/test_check_pin_tests.py
+!pytest.ini
+!requirements-test.txt
