@@ -91,7 +91,7 @@ def parse_block(body):
     fit. Raises AssertionError when no block follows the marker line.
     """
     after = body.rpartition(f'\n{STATUS_MARKER}\n')[2]
-    head, separator, tail = after.partition(_BLOCK_PREFIX)
+    _, separator, tail = after.partition(_BLOCK_PREFIX)
     if not separator or not tail.endswith(_BLOCK_SUFFIX):
         raise AssertionError(f'no hidden block follows the status marker: {after!r}')
     return json.loads(_unescape(tail[:-len(_BLOCK_SUFFIX)]))

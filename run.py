@@ -111,8 +111,9 @@ def main():
             deliver(repo, pr, head_sha, candidates)
         except Exception as delivery:  # stated in the status comment, never silent
             reason = str(delivery)
-            if getattr(delivery, 'stderr', None):
-                reason += f': {delivery.stderr.strip()}'
+            stderr = getattr(delivery, 'stderr', None)
+            if stderr:
+                reason += f': {stderr.strip()}'
             error = f'the review could not be posted: {reason}'
 
     _, _, truncated = upsert_status(gh, repo, pr, head_sha, candidates,

@@ -1,0 +1,28 @@
+# Subprocess coverage for the one measured cell in tests.yml. The suite runs
+# pytest on CPython 3.15, and the screen or driver code the suite exercises
+# runs in subprocesses of the pytest process, so a `coverage run` around
+# pytest alone measures none of them. Instead the workflow installs coverage
+# into setup-python's interpreter, writes coverage's startup hook into its
+# site-packages, and sets COVERAGE_PROCESS_START, which starts the measurer
+# inside every python3 the job runs -- the suite and anything it starts. On
+# a cell without the hook, nothing here has any effect.
+#
+# `parallel` is what keeps the job's several python3 processes from
+# overwriting one another's data files; `coverage combine` merges them before
+# anything reports. `include` scopes the REPORT to the repository's own
+# surface -- the screen, the action's driver and the CI scripts, the files
+# the diff-coverage report measures; the suite's own files are measured too
+# and simply do not appear in the report.
+#
+# The hook file the workflow writes is named to sort before anything else
+# that might want the same slot (a .pth executes in sorted order), and
+# imports nothing but coverage.
+
+[run]
+parallel = True
+
+[report]
+include =
+    */check_pin_tests.py
+    */run.py
+    */scripts/ci/*.py

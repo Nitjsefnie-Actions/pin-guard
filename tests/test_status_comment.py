@@ -6,6 +6,7 @@ import unittest
 
 KIT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 spec = importlib.util.spec_from_file_location('status_comment', os.path.join(KIT, 'scripts', 'ci', 'status_comment.py'))
+assert spec and spec.loader
 mod = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(mod)
 
@@ -73,9 +74,9 @@ def listing_call(*pages):
 
 def block_of(body):
     """The hidden block's escaped JSON text, read the way a consumer reads it."""
-    before, marker, after = body.rpartition(f'\n{mod.STATUS_MARKER}\n')
+    _, marker, after = body.rpartition(f'\n{mod.STATUS_MARKER}\n')
     assert marker, 'the rendered body must carry the status marker on its own line'
-    head, sep, tail = after.partition('<!-- ')
+    _, sep, tail = after.partition('<!-- ')
     assert sep and tail.endswith(' -->'), f'no hidden block after the marker: {after!r}'
     return tail[:-4]
 

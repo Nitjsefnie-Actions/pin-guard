@@ -1,0 +1,17 @@
+{
+    "typeCheckingMode": "basic",
+    "pythonVersion": "3.15",
+    "pythonPlatform": "All",
+    "include": [
+        "check_pin_tests.py",
+        "run.py",
+        "scripts/ci",
+        "tests"
+    ],
+    "exclude": [
+        "**/__pycache__"
+    ],
+    "extraPaths": [
+        "scripts/ci"
+    ]
+}
