@@ -15,12 +15,15 @@
 !.github/workflows/claim.yml
 !.github/workflows/pr-gate.yml
 !check_pin_tests.py
+!action.yml
+!run.py
 !tests/
 tests/*
 !tests/test_check_pin_tests.py
 !tests/test_screen_run.py
 !tests/test_review_submit.py
 !tests/test_status_comment.py
+!tests/test_action.py
 !scripts/
 scripts/*
 !scripts/ci/
