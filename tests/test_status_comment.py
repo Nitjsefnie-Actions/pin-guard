@@ -65,12 +65,10 @@ def comment(cid, body, login=BOT, user_type='Bot'):
     return {'id': cid, 'user': {'login': login, 'type': user_type}, 'body': body}
 
 
-def json_page(items):
-    return json.dumps(items)
-
-
-def listing_call(items):
-    return ('api', f'repos/{REPO}/issues/{PR}/comments', '--paginate'), None, json_page(items)
+def listing_call(*pages):
+    """A `--paginate --slurp` listing: one call printing one array of page arrays."""
+    return (('api', f'repos/{REPO}/issues/{PR}/comments', '--paginate', '--slurp'),
+            None, json.dumps(list(pages)))
 
 
 def block_of(body):
@@ -96,6 +94,7 @@ class FindStatus(unittest.TestCase):
         gh, got = self.found('A screen report.\n\n' + mod.STATUS_MARKER)
         self.assertEqual(got['id'], 9)
         self.assertIn('--paginate', gh.calls[0][0])
+        self.assertIn('--slurp', gh.calls[0][0])
 
     def test_a_status_comment_this_module_renders_is_recognized(self):
         body, truncated = mod.status_body(SHA, [('tests/x.py', 7, 'x == "1"')])

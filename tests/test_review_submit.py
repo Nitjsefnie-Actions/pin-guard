@@ -75,17 +75,17 @@ def comment(cid, rid, path, line, body, *, commit_id=SHA, reply_to=None, login=B
     return item
 
 
-def json_page(items):
-    """The stdout a paginated listing call returns."""
-    return json.dumps(items)
+def json_slurp(*pages):
+    """The stdout `gh api --paginate --slurp` prints: one array of page arrays."""
+    return json.dumps(list(pages))
 
 
-def comments_call(items):
-    return ('api', f'repos/{REPO}/pulls/{PR}/comments', '--paginate'), None, json_page(items)
+def comments_call(*pages):
+    return ('api', f'repos/{REPO}/pulls/{PR}/comments', '--paginate', '--slurp'), None, json_slurp(*pages)
 
 
-def reviews_call(items):
-    return ('api', f'repos/{REPO}/pulls/{PR}/reviews', '--paginate'), None, json_page(items)
+def reviews_call(*pages):
+    return ('api', f'repos/{REPO}/pulls/{PR}/reviews', '--paginate', '--slurp'), None, json_slurp(*pages)
 
 
 class CurrentBotComments(unittest.TestCase):
@@ -164,6 +164,23 @@ class CurrentBotComments(unittest.TestCase):
             [review(10, BODY)])
         self.assertEqual(got, [])
 
+    def test_a_listing_split_across_two_pages_reads_whole_and_dedupes(self):
+        # 31 inline comments: GitHub's default page of 30 plus one on the
+        # next page. `--paginate --slurp` prints one array of page arrays,
+        # the read flattens it, and the last page's comment dedupes its
+        # candidate like any other.
+        first_page = [comment(n, 10, f'tests/p{n}.py', n + 1, mod.render_candidate(f'x{n} == "1"'))
+                      for n in range(30)]
+        last = comment(30, 10, 'tests/x.py', 7, mod.render_candidate('the thirty first'))
+        gh = Gh(comments_call(first_page, [last]), reviews_call([review(10, BODY)]))
+        got = mod.current_bot_comments(gh, REPO, PR, SHA, BOT)
+        self.assertEqual(len(got), 31)
+        self.assertEqual(got[30]['quoted_text'], 'the thirty first')
+        candidates = ([(f'tests/p{n}.py', n + 1, f'x{n} == "1"') for n in range(30)]
+                      + [('tests/x.py', 7, 'the thirty first')])
+        got_plan = mod.plan_comments(candidates, got, {(p, n) for p, n, _ in candidates})
+        self.assertEqual(got_plan, ([], []))
+
 
 class PlanComments(unittest.TestCase):
     """plan_comments: which candidates are new, and where each one routes."""
@@ -210,8 +227,18 @@ class RenderCandidate(unittest.TestCase):
     """render_candidate: hostile text rendered inert, plus its guidance."""
 
     def test_the_guidance_is_the_pinned_wording(self):
-        self.assertIn('If this line pins a dependency, delete it, then resolve this thread.', mod.render_candidate('x'))
-        self.assertIn('resolve the thread with a reply naming why', mod.render_candidate('x'))
+        self.assertIn('If this line pins a dependency, delete it, then resolve this thread. '
+                      'If it is a consistency check between files or steps, or a security invariant enumerated '
+                      'over every workflow, resolve the thread with a reply naming why.',
+                      mod.render_candidate('x'))
+
+    def test_the_quoted_field_has_a_known_answer(self):
+        # The persisted format pinned against a hand-written expected line:
+        # every quoted-field test otherwise renders and reads through the
+        # same module, where a symmetric writer+reader mutant stays green.
+        text = 'a `b` --> c'
+        expected = '<!-- pin-guard: quoted {"text": "a `b` &dash;&dash;&gt; c"} -->'
+        self.assertTrue(mod.render_candidate(text).endswith(expected))
 
     def test_a_backtick_run_widens_the_fence(self):
         self.assertTrue(mod.render_candidate('x ``````` y').startswith('````````\nx ``````` y\n````````'))
