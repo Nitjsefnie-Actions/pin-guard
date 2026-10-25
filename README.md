@@ -65,14 +65,17 @@ For each screened head with candidates the action submits one review with
 event `COMMENT` — never `REQUEST_CHANGES` or `APPROVE` — whose `commit_id`
 is the screened head SHA, carrying one inline comment per candidate anchored
 on that line of the pull request's diff, so every finding is its own
-resolvable thread. A candidate on a line outside the diff is listed in the
+resolvable thread (split into several reviews on that head only when GitHub
+refuses one review's size). A candidate on a line outside the diff is listed in the
 review body, because GitHub accepts inline comments only on diff lines. Each
 inline comment shows the line's text in a code fence and the guidance below.
 The action never resolves or dismisses a thread itself.
 
-Every completed screen also writes one sticky status comment per pull
-request, edited in place on every later head and never duplicated. It names
-the screened head SHA, the candidate count and each candidate as `path:line`.
+A completed screen writes one sticky status comment per pull request, never
+duplicated: an earlier status comment is edited in place on every later head,
+and with no earlier one a clean head posts nothing — a head with candidates,
+or one that could not be screened, always gets one. It names the screened
+head SHA, the candidate count and each candidate as `path:line`.
 
 ## Not a gate by default
 
@@ -112,7 +115,9 @@ block:
 The block is JSON with `&`, `<`, `>` and `-` escaped, so a candidate's text
 can never close the comment or leak markup; it always carries the full
 candidate list, even when GitHub's comment length limit cut the visible list
-to what fits with the omission count stated. This repository only writes the
+to what fits with the omission count stated. When even the full hidden list
+cannot fit, the block instead carries `{"head_sha": ..., "count": N,
+"truncated": true}` with no `candidates` key. This repository only writes the
 block; reading it before a merge is the reader's job.
 
 Trust only the status comment whose author is `github-actions[bot]` — the
