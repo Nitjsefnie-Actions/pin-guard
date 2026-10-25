@@ -8,16 +8,18 @@
 # whatever artifact the index serves for that version; these sha256 hashes
 # make the install the same bytes on every run.
 #
-# What the hashes have to cover is the wheel each consumer's runner
-# resolves: actionlint.yml's ubuntu-latest runner takes x86_64 glibc,
-# CPython 3.13, and tests.yml's matrix adds macos-latest, which takes an
-# arm64 macOS wheel. zizmor declares no runtime dependencies, so PyYAML is
-# the whole transitive closure; ruff and coverage ship none, so their
-# blocks install alone; and the type/lint block carries the nine
-# dependencies pylint, pycodestyle and pyright resolve -- astroid, dill,
-# isort, mccabe, mypy_extensions, nodeenv, platformdirs, tomlkit and
-# typing_extensions. Every block lists every artifact its closure ships,
-# so it resolves on whichever platform lifts it.
+# What the hashes have to cover is the artifact each consumer's runner
+# resolves: actionlint.yml's ubuntu-latest runner and tests.yml's matrix run
+# CPython 3.15 (x86_64 glibc on ubuntu-latest, arm64 macOS on macos-latest).
+# zizmor declares no runtime dependencies, so PyYAML is the whole transitive
+# closure; ruff and coverage ship none, so their blocks install alone; and
+# the type/lint block carries the nine dependencies pylint, pycodestyle and
+# pyright resolve -- astroid, dill, isort, mccabe, mypy_extensions, nodeenv,
+# platformdirs, tomlkit and typing_extensions. Every block lists every
+# artifact its closure ships, so it resolves on whichever platform lifts it.
+# PyYAML ships no cp315 wheel, so its block carries the 6.0.3 sdist beside
+# the cp313 wheel: under 3.15 hash-checking mode matches the sdist and pip
+# builds it, and on a wheel-bearing interpreter the wheel still wins.
 #
 # The `pip` entry in .github/dependabot.yml watches this directory, so a
 # version bump arrives as a pull request with the --hash lines rewritten
@@ -55,7 +57,8 @@ zizmor==1.31.1 \
     --hash=sha256:e7fdf82d31cc67eb1d5030bf2372b25ee2a1c3ad05017e18da70ed138c4accd6 \
     --hash=sha256:eb9c8a3e2c1080810fdb68bc36717b2a9d61283bb98e3a48689f5a852fc48e9f
 PyYAML==6.0.3 \
-    --hash=sha256:0f29edc409a6392443abf94b9cf89ce99889a1dd5376d94316ae5145dfedd5d6
+    --hash=sha256:0f29edc409a6392443abf94b9cf89ce99889a1dd5376d94316ae5145dfedd5d6 \
+    --hash=sha256:d76623373421df22fb4cf8817020cbb7ef15c725b9d5e45f17e189bfc384190f
 
 # The pin Dependabot's pip entry watches: bumps rewrite the --hash lines (the file's documented procedure).
 ruff==0.17.1 \

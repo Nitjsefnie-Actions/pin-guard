@@ -13,12 +13,14 @@
 !.github/dependabot.yml
 !.github/comment-share.json
 !.github/size-baseline.json
+!.github/ci-thresholds.json
 !.github/ISSUE_TEMPLATE/
 .github/ISSUE_TEMPLATE/*
 !.github/ISSUE_TEMPLATE/issue.md
 !.github/scripts/
 .github/scripts/*
 !.github/scripts/diff_coverage.py
+!.github/scripts/ratchet_thresholds.py
 !.github/workflows/
 .github/workflows/*
 !.github/workflows/claim.yml
