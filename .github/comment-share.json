@@ -19,17 +19,9 @@
     3604,
     5610
   ],
-  ".github/workflows/claim.yml": [
-    41,
-    597
-  ],
   ".github/workflows/codeql.yml": [
     1770,
     2671
-  ],
-  ".github/workflows/comment-share.yml": [
-    254,
-    1754
   ],
   ".github/workflows/coverage-comment.yml": [
     3309,
@@ -67,10 +59,6 @@
     1338,
     3924
   ],
-  "scripts/ci/aggregate_gate.py": [
-    87,
-    717
-  ],
   "scripts/ci/review_submit.py": [
     3647,
     6786
@@ -87,17 +75,9 @@
     1688,
     9981
   ],
-  "tests/test_check_pin_tests.py": [
-    4261,
-    125528
-  ],
   "tests/test_review_submit.py": [
     1780,
     11676
-  ],
-  "tests/test_screen_run.py": [
-    723,
-    6008
   ],
   "tests/test_status_comment.py": [
     1707,
