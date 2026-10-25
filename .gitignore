@@ -19,10 +19,14 @@
 tests/*
 !tests/test_check_pin_tests.py
 !tests/test_screen_run.py
+!tests/test_review_submit.py
+!tests/test_status_comment.py
 !scripts/
 scripts/*
 !scripts/ci/
 scripts/ci/*
 !scripts/ci/screen_run.py
+!scripts/ci/review_submit.py
+!scripts/ci/status_comment.py
 !pytest.ini
 !requirements-test.txt
