@@ -21,9 +21,11 @@ name: tests
 # measured by coverage's startup hook, which the Install coverage tooling
 # step writes into that interpreter's site-packages and arms through
 # COVERAGE_PROCESS_START. On the other cell the step is skipped and the
-# suite runs unmeasured. The summary renders whether or not a floor fails;
-# this repository carries no floor file, so the measurement is reported,
-# shipped as XML, and judged by a reviewer rather than a threshold.
+# suite runs unmeasured. The floor lives in .github/ci-thresholds.json and
+# is never restated here; the summary renders whether or not the gate
+# fails. The seed holds the measured 97.3 with the floor one calibration
+# gap (the ratchet script's own 1.5) below it, so first-run variance
+# greens and only a rise beyond the hysteresis raises.
 #
 # The same measurement is also reported per change: the measured cell writes
 # the XML form of it, the pull-request-only `diff-coverage` job diffs the
@@ -113,8 +115,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # The repository's matrix: the required check names are
-        # `suites (ubuntu-latest)` and `suites (macos-latest)`.
+        # The repository's matrix: the check names are `suites (ubuntu-latest)`
+        # and `suites (macos-latest)`.
         os: [ubuntu-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 10
@@ -149,11 +151,10 @@ jobs:
         # the other three are still written. This job rather than the
         # actionlint one because this workflow's push trigger is unfiltered,
         # so it runs for the documentation-only commit that carries the marker
-        # as well as for the code change.
-        # Explicit `shell: bash` adds --noprofile --norc, and pipefail is its
-        # only operative delta -- the body already guards `git grep` with
-        # `|| found=$?`, so no pipe here can turn "no match" into a failure
-        # the implicit shell would not have.
+        # as well as for the code change. Explicit `shell: bash` adds
+        # --noprofile --norc; pipefail is its only operative delta -- the
+        # body already guards `git grep` with `|| found=$?`, so no pipe can
+        # turn "no match" into a failure the implicit shell would not have.
         shell: bash
         run: |
           # git grep exits 1 for "no match" and above 1 for an error it could
@@ -213,8 +214,7 @@ jobs:
       - name: pycodestyle
         if: ${{ !cancelled() && steps.install_checks.outcome == 'success' }}
         # pycodestyle reads setup.cfg from the working directory: the
-        # measured line ceiling and the two named code ignores live there,
-        # not on this command line.
+        # measured ceiling and the two named ignores live there.
         run: git ls-files '*.py' | xargs pycodestyle
 
       - name: pylint
@@ -232,8 +232,7 @@ jobs:
         # no baseline and no ratchet, because the tree passes outright.
         run: pyright --project pyrightconfig.json
       # The measured cell writes coverage's startup hook into the site
-      # directory of setup-python's interpreter -- the one the suite and any
-      # subprocess it starts run -- and arms the two env vars the rest of
+      # directory of setup-python's interpreter and arms the two env vars
       # the job inherits through GITHUB_ENV, so the measurer starts inside
       # every python3 the job runs. On the other cell the step is skipped
       # and the suite runs unmeasured.
@@ -255,21 +254,27 @@ jobs:
 
       # The suite's python3 processes each wrote their own data file (parallel
       # mode in .coveragerc), so they are combined before anything reads a
-      # total; the summary renders the measurement either way. Every
-      # coverage command names its config with --rcfile so the steps do not
-      # lean on coverage's working-directory discovery.
+      # total. Every coverage command names its config with --rcfile so the
+      # steps do not lean on coverage's working-directory discovery.
       - name: Record the coverage summary
         if: matrix.os == 'ubuntu-latest'
         run: |
           python3 -m coverage combine --rcfile=.coveragerc
           python3 -m coverage report --format=markdown --precision=1 --rcfile=.coveragerc >> "$GITHUB_STEP_SUMMARY"
 
+      # The floor is read from the committed file rather than restated here, so
+      # a floor change is a diff to the file a reviewer sees, not a buried
+      # literal in the step.
+      - name: Coverage gate
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          floor="$(python3 -c 'import json; print(json.load(open(".github/ci-thresholds.json"))["coverage"]["python"]["floor"])')"
+          python3 -m coverage report --fail-under="$floor" --precision=1 --rcfile=.coveragerc
+
       # The XML form of the same measurement the summary just read: the
-      # pull-request-only diff-coverage job cannot re-run the suite to make
-      # one, so the measured cell ships it. Both steps are gated to this one
-      # leg: a run's artifact names are one namespace shared by every job in
-      # it, and this matrix has exactly one uploading leg, so the
-      # `coverage-xml` name names one measurement by construction.
+      # pull-request-only diff-coverage job cannot re-run the suite, so the
+      # measured cell ships it. The matrix has exactly one uploading leg, so
+      # the `coverage-xml` name names one measurement by construction.
       - name: Write the coverage XML
         if: matrix.os == 'ubuntu-latest'
         run: python3 -m coverage xml --rcfile=.coveragerc -o coverage.xml
@@ -281,6 +286,34 @@ jobs:
           name: coverage-xml
           path: coverage.xml
           if-no-files-found: error
+
+      # Stage ratchet data from main pushes only: a PR run measures the
+      # merge tree, which main will never hold, and ratchet-push's own if:
+      # ignores PR runs anyway. Exactly one leg uploads, so ratchet-push
+      # names one measurement just as coverage-xml does above.
+      - name: Record the ratchet data
+        if: matrix.os == 'ubuntu-latest' && github.event_name == 'push'
+        run: |
+          measured="$(python3 -m coverage report --format=total --precision=1 --rcfile=.coveragerc)"
+          python3 .github/scripts/ratchet_thresholds.py --measured "$measured" \
+            --thresholds .github/ci-thresholds.json \
+            --out-dir "$RUNNER_TEMP/ratchet-data"
+          # Absence IS the no-raise signal. Every refusal exits nonzero,
+          # so no artifact can mean only that no raise was justified,
+          # never that the script failed quietly. Write the base only
+          # alongside staged data, so a no-op cannot create an artifact.
+          if [ -f "$RUNNER_TEMP/ratchet-data/ci-thresholds.json" ] ; then
+            git rev-parse HEAD > "$RUNNER_TEMP/ratchet-data/base.txt"
+          fi
+
+      - name: Upload the ratchet data
+        if: matrix.os == 'ubuntu-latest' && github.event_name == 'push'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ratchet-push
+          path: ${{ runner.temp }}/ratchet-data
+          if-no-files-found: ignore
+          retention-days: 1
 
   size-baseline:
     runs-on: ubuntu-latest
@@ -295,8 +328,7 @@ jobs:
           persist-credentials: false
       - name: Check line counts against the size baseline
         # Forced check: workflow_dispatch is an event auto fails closed on.
-        # The pin names the release: the action is consumed from GitHub by
-        # SHA, and the records it reads live in .github/size-baseline.json.
+        # The records the pinned action reads live in .github/size-baseline.json.
         uses: Nitjsefnie-Actions/size-ratchet@67bb01e536611398a3b5cedd3f3cf95fd6e5693e # v1.0.1
         with:
           mode: check
@@ -337,9 +369,8 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
       - name: Tighten the size records after the green gate
-        # The pin names the release: the action is consumed from GitHub by
-        # SHA. Same records the check job reads above; the action tightens
-        # in place and the stage step stages whatever changed.
+        # Same records the check job reads above; the pinned action
+        # tightens in place and the stage step stages whatever changed.
         uses: Nitjsefnie-Actions/size-ratchet@67bb01e536611398a3b5cedd3f3cf95fd6e5693e # v1.0.1
         with:
           mode: tighten
@@ -370,7 +401,9 @@ jobs:
         if: success() && steps.stage.outputs.changed == 'true'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: ratchet-push
+          # Distinct from the suites job's thresholds artifact above: a run's
+          # artifact names are one namespace shared by every job in it.
+          name: size-baseline-ratchet
           path: ${{ runner.temp }}/ratchet-push
           if-no-files-found: error
           retention-days: 1
@@ -378,10 +411,8 @@ jobs:
   # The per-change half of the coverage story: of the lines this pull
   # request ADDED that coverage considers executable, how many the suite
   # reached. INFORMATIONAL, never a gate -- the tree-wide figure in the
-  # job summary is a figure a reviewer judges (a refactor that moves code,
-  # a change that only deletes), not a threshold that blocks a merge,
-  # which is also why this job is deliberately absent from no required
-  # context and fails nothing below it.
+  # job summary is a figure a reviewer judges, not a threshold that
+  # blocks a merge, so it is in no required context.
   #
   # Pull requests only, and only when the suite actually measured: a skipped
   # or failed ancestor must not be reported as a number.

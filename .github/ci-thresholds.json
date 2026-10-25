@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "coverage": {
+    "python": {
+      "floor": 95.8,
+      "measured": 97.3,
+      "cell": "ubuntu-latest"
+    }
+  }
+}

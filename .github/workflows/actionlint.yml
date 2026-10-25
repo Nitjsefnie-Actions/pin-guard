@@ -71,8 +71,7 @@ jobs:
       # rhysd/actionlint#654, which adds GitHub's documented `queue` key
       # under `concurrency` (single|max). Stock 1.7.12 is the latest
       # upstream release and false-reds the `queue: max` this repository
-      # recommends in its README Install block and brings to its own
-      # claim.yml (repo issue #52; upstream informed via #657). Return to
+      # brings in its own claim.yml (upstream informed via #657). Return to
       # rhysd's own release once it ships the key.
       PIN_GUARD_ACTIONLINT_VERSION: 1.7.12-queue.1
       PIN_GUARD_ACTIONLINT_REPO: Nitjsefnie-OSC/actionlint

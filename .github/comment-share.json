@@ -7,9 +7,13 @@
     4662,
     11570
   ],
+  ".github/scripts/ratchet_thresholds.py": [
+    611,
+    2664
+  ],
   ".github/workflows/actionlint.yml": [
-    3680,
-    5683
+    3630,
+    5633
   ],
   ".github/workflows/audit.yml": [
     3604,
@@ -36,8 +40,8 @@
     1059
   ],
   ".github/workflows/ratchet-push.yml": [
-    3006,
-    11284
+    3341,
+    14067
   ],
   ".github/workflows/scorecard.yml": [
     593,
@@ -48,8 +52,8 @@
     2863
   ],
   ".github/workflows/tests.yml": [
-    10314,
-    17438
+    10630,
+    18679
   ],
   "action.yml": [
     172,
