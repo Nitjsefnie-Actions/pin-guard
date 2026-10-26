@@ -56,8 +56,8 @@
     52415
   ],
   "run.py": [
-    1393,
-    4066
+    1590,
+    4282
   ],
   "scripts/ci/review_submit.py": [
     3647,
@@ -72,8 +72,8 @@
     5842
   ],
   "tests/test_action.py": [
-    1804,
-    11381
+    2430,
+    13979
   ],
   "tests/test_review_submit.py": [
     1780,
