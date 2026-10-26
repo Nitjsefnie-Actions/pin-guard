@@ -41,12 +41,15 @@ jobs:
 
 The `with:` block shows **every input with its default**. Omit it and a bare
 `uses:` step behaves the same. `github-token` is the token for the API reads
-and the comment writes. The action reads which login the token posts as and
-recognizes its own earlier comments by that login, so the token needs only
-the workflow's `pull-requests: write` permission: the default `github.token`
-posts as `github-actions[bot]`, and a PAT or App token posts as its own
-identity just as well — no fresh status comment on every head, whichever
-token runs.
+and the comment writes. The action recognizes its own earlier comments by
+the login the token posts as, so the token needs only the workflow's
+`pull-requests: write` permission. Keep the default `github.token`: it posts
+as `github-actions[bot]`, and the action knows that identity outright — a
+GitHub App installation token cannot be read a login from at all (GitHub
+answers 403 for `GET /user` on installation tokens). A personal access token
+works too: the action reads its login once per run and recognizes its
+comments by it; a token that is neither makes the run refuse before any
+screen, rather than post comments it would never find again.
 
 The `permissions:` block is least-privilege: `contents: read` reads the pull
 request's files at the head, and `pull-requests: write` posts the review and

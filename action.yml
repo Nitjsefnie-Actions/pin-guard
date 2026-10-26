@@ -25,6 +25,8 @@ runs:
       env:
         PIN_GUARD_FAIL_ON_CANDIDATES: ${{ inputs.fail-on-candidates }}
         PIN_GUARD_GITHUB_TOKEN: ${{ inputs.github-token }}
+        GH_TOKEN: ${{ inputs.github-token }}
+        PIN_GUARD_DEFAULT_TOKEN: ${{ inputs.github-token == github.token }}
         PIN_GUARD_REPO: ${{ github.repository }}
         PIN_GUARD_PR_NUMBER: ${{ github.event.pull_request.number }}
         PIN_GUARD_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
