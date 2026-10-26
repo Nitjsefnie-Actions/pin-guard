@@ -80,8 +80,8 @@ def current_bot_comments(gh, repo, pr, head_sha, bot_login):
     shortcut: a review comment created at commit X cannot be outdated at X
     — outdatedness arises when the line changes relative to the comment's
     commit — so `commit_id == screened head ∧ in_reply_to_id is null`
-    proves current at that head; the first real two-head pull request after
-    release confirms this empirically.
+    proves current at that head; observed on a real two-head pull request:
+    commit_id moves to the new head.
     """
     comments = [item for page in json.loads(gh('api', f'repos/{repo}/pulls/{pr}/comments', '--paginate', '--slurp'))
                 for item in page]
