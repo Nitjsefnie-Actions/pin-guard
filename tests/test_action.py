@@ -132,6 +132,11 @@ def pr_reviews_call(*pages):
             None, json_slurp(*pages))
 
 
+def pr_head_call(result=None):
+    return (('api', f'repos/{REPO}/pulls/{PR}', '--jq', '.headRefOid'),
+            None, (result or SHA) + '\n')
+
+
 def status_find_call(*pages):
     return (('api', f'repos/{REPO}/issues/{PR}/comments', '--paginate', '--slurp'),
             None, json_slurp(*pages))
@@ -158,7 +163,7 @@ ON_CANDIDATE = ('tests/on.py', 2, 'x == "1"')
 OFF_CANDIDATE = ('tests/off.py', 3, 'y == "2"')
 CANDIDATES = (ON_CANDIDATE, OFF_CANDIDATE)
 EXPECTED_REVIEW = {'event': 'COMMENT', 'commit_id': SHA,
-                   'body': f'{review_submit.MARKER}\n- tests/off.py:3',
+                   'body': f"{review_submit.MARKER}\n- {status_comment.inert('tests/off.py:3')}",
                    'comments': [{'path': 'tests/on.py', 'line': 2, 'side': 'RIGHT',
                                  'body': review_submit.render_candidate('x == "1"')}]}
 REVIEW_URL = json.dumps({'html_url': 'https://example.com/r/1'})
@@ -181,19 +186,20 @@ class Action(unittest.TestCase):
     def test_a_clean_head_with_no_prior_status_writes_nothing_and_exits_0(self):
         # Only the status read is modeled: any POST or PATCH is an unmodeled
         # call the double refuses, so this control proves the zero-write path.
-        gh = Gh(status_find_call())
+        gh = Gh(pr_head_call(), status_find_call())
         code, _ = self.action(gh, Screen(screen_run.ScreenOutcome('clean', (), '')))
         self.assertEqual(code, 0)
-        self.assertEqual([args for args, _ in gh.calls], [status_find_call()[0]])
+        self.assertEqual([args for args, _ in gh.calls],
+                         [pr_head_call()[0], status_find_call()[0]])
 
     def test_the_screen_receives_the_pr_coordinates_and_the_token(self):
-        gh = Gh(status_find_call())
+        gh = Gh(pr_head_call(), status_find_call())
         screen = Screen(screen_run.ScreenOutcome('clean', (), ''))
         self.action(gh, screen)
         self.assertEqual(screen.calls, [(REPO, PR, TOKEN)])
 
     def test_candidates_with_fail_on_post_the_status_and_the_review_and_exit_1(self):
-        gh = Gh(files_call([diff_file('tests/on.py', *MIXED_PATCH)]),
+        gh = Gh(pr_head_call(), files_call([diff_file('tests/on.py', *MIXED_PATCH)]),
                 pr_comments_call(), pr_reviews_call(),
                 review_post(payload(EXPECTED_REVIEW), REVIEW_URL),
                 status_find_call(),
@@ -207,7 +213,7 @@ class Action(unittest.TestCase):
                           status_post(status_body_check())[0]])
 
     def test_candidates_by_default_post_the_status_and_the_review_and_exit_0(self):
-        gh = Gh(files_call([diff_file('tests/on.py', *MIXED_PATCH)]),
+        gh = Gh(pr_head_call(), files_call([diff_file('tests/on.py', *MIXED_PATCH)]),
                 pr_comments_call(), pr_reviews_call(),
                 review_post(payload(EXPECTED_REVIEW), REVIEW_URL),
                 status_find_call(), status_post(status_body_check('- ' + status_comment.inert('tests/on.py:2'), '- ' + status_comment.inert('tests/off.py:3'))))
@@ -219,7 +225,7 @@ class Action(unittest.TestCase):
 
     def test_a_could_not_screen_outcome_states_its_reason_and_exits_1(self):
         detail = 'the screen exceeded its 240s budget and was killed'
-        gh = Gh(status_find_call(),
+        gh = Gh(pr_head_call(), status_find_call(),
                 status_post(status_body_check('The screen could not run:', detail)))
         code, _ = self.action(gh, Screen(screen_run.ScreenOutcome('could-not-screen', (), detail)))
         self.assertEqual(code, 1)
@@ -233,7 +239,7 @@ class Action(unittest.TestCase):
         # job fails either way.
         seam = Screen(screen_run.ScreenOutcome('could-not-screen', CANDIDATES, '',
                                                (('Dockerfile', 'HTTP 404: Not Found'),)))
-        gh = Gh(files_call([diff_file('tests/on.py', *MIXED_PATCH)]),
+        gh = Gh(pr_head_call(), files_call([diff_file('tests/on.py', *MIXED_PATCH)]),
                 pr_comments_call(), pr_reviews_call(),
                 review_post(payload(EXPECTED_REVIEW), REVIEW_URL),
                 status_find_call(),
@@ -249,10 +255,10 @@ class Action(unittest.TestCase):
         # One oversized candidate off the diff: the review carries it as a
         # body row, and the status comment cannot hold the full list.
         huge = ('tests/off.py', 3, 'x' * 70000)
-        gh = Gh(files_call(),
+        gh = Gh(pr_head_call(), files_call(),
                 pr_comments_call(), pr_reviews_call(),
                 review_post(payload({'event': 'COMMENT', 'commit_id': SHA,
-                                     'body': f'{review_submit.MARKER}\n- tests/off.py:3',
+                                     'body': f"{review_submit.MARKER}\n- {status_comment.inert('tests/off.py:3')}",
                                      'comments': []}), REVIEW_URL),
                 status_find_call(), status_post(status_body_check('1 candidate line(s)')))
         code, _ = self.action(gh, Screen(screen_run.ScreenOutcome('candidates', (huge,), '')))
@@ -276,19 +282,45 @@ class Action(unittest.TestCase):
         self.assertIn('nine', err)
 
     def test_an_unknown_screen_status_fails_closed_through_the_status_comment(self):
-        gh = Gh(status_find_call(),
+        gh = Gh(pr_head_call(), status_find_call(),
                 status_post(status_body_check('the screen reported an unknown status')))
         code, _ = self.action(gh, Screen(screen_run.ScreenOutcome('mystery', (), '')))
         self.assertEqual(code, 1)
         self.assertEqual([args for args, _ in gh.calls if '--method' in args],
                          [status_post(status_body_check())[0]])
 
+    def test_a_moved_head_refuses_to_screen_and_fails(self):
+        # The screen reads the PR at its CURRENT head while the event's SHA
+        # labels the review and the status: when they differ, nothing is
+        # screened, nothing is delivered, and the status comment says the
+        # head moved. The screen double must never be called.
+        gh = Gh(pr_head_call('b' * 40), status_find_call(),
+                status_post(status_body_check('the pull request head moved since the event')))
+        screen = Screen(screen_run.ScreenOutcome('clean', (), ''))
+        code, _ = self.action(gh, screen)
+        self.assertEqual(code, 1)
+        self.assertEqual(screen.calls, [])
+        self.assertEqual([args for args, _ in gh.calls if '--method' in args],
+                         [status_post(status_body_check())[0]])
+
+    def test_hostile_paths_render_inert_in_the_review_body(self):
+        # A filename holding an @mention and backticks lands in the review
+        # body inside a code span its own backtick run cannot close.
+        hostile = ('tests/@user`x`.py', 1, 'x == "1"')
+        body = f'{review_submit.MARKER}\n- {status_comment.inert("tests/@user`x`.py:1")}'
+        gh = Gh(pr_head_call(), files_call(), pr_comments_call(), pr_reviews_call(),
+                review_post(payload({'event': 'COMMENT', 'commit_id': SHA, 'body': body,
+                                     'comments': []}), REVIEW_URL),
+                status_find_call(), status_post(status_body_check('1 candidate line(s)')))
+        code, _ = self.action(gh, Screen(screen_run.ScreenOutcome('candidates', (hostile,), '')))
+        self.assertEqual(code, 0)
+
     def test_a_prior_status_comment_is_edited_in_place_not_posted_again(self):
         earlier_body = status_comment.status_body('b' * 40, [('tests/old.py', 1, 'old == "1"')])[0]
         earlier = {'id': 7, 'user': {'login': status_comment.BOT_LOGIN, 'type': 'Bot'},
                    'body': earlier_body}
         patch_args = ('api', f'repos/{REPO}/issues/{PR}/comments/7', '--method', 'PATCH', '--input', '-')
-        gh = Gh(status_find_call([earlier]),
+        gh = Gh(pr_head_call(), status_find_call([earlier]),
                 (patch_args,
                  status_body_check(f'Pin-test screen of head {SHA}', 'This head is clean'),
                  json.dumps({'html_url': 'https://example.com/s/7'})))
@@ -300,7 +332,7 @@ class Action(unittest.TestCase):
 
     def test_a_delivery_exception_still_reports_the_screen_outcome_and_exits_1(self):
         error = subprocess.CalledProcessError(1, ['gh'], stderr='gh: GitHub surface refused the write')
-        gh = Gh(files_call([diff_file('tests/on.py', *MIXED_PATCH)]),
+        gh = Gh(pr_head_call(), files_call([diff_file('tests/on.py', *MIXED_PATCH)]),
                 pr_comments_call(), pr_reviews_call(),
                 review_post(payload(EXPECTED_REVIEW), error),
                 status_find_call(),
@@ -332,7 +364,7 @@ class Action(unittest.TestCase):
                        'comments': [{'path': path, 'line': line, 'side': 'RIGHT',
                                      'body': review_submit.render_candidate(text)}
                                     for path, line, text in CANDIDATES]}
-        gh = Gh(files_call(files), pr_comments_call(), pr_reviews_call(),
+        gh = Gh(pr_head_call(), files_call(files), pr_comments_call(), pr_reviews_call(),
                 review_post(payload(both_inline), REVIEW_URL),
                 status_find_call(), status_post(status_body_check()))
         code, _ = self.action(gh, Screen(screen_run.ScreenOutcome('candidates', CANDIDATES, '')))
@@ -355,7 +387,7 @@ class Action(unittest.TestCase):
         earlier_status = {'id': 7, 'user': {'login': status_comment.BOT_LOGIN, 'type': 'Bot'},
                           'body': status_comment.status_body(SHA, [list(row) for row in CANDIDATES])[0]}
         patch_args = ('api', f'repos/{REPO}/issues/{PR}/comments/7', '--method', 'PATCH', '--input', '-')
-        gh2 = Gh(files_call(files),
+        gh2 = Gh(pr_head_call(), files_call(files),
                  pr_comments_call(comments_page), pr_reviews_call(reviews_page),
                  status_find_call([earlier_status]),
                  (patch_args, status_body_check(f'Pin-test screen of head {SHA}'),
@@ -371,7 +403,7 @@ class DiffableLines(unittest.TestCase):
     """diffable_lines: the added-line anchors read from the files listing's patches."""
 
     def counted(self, *pages):
-        gh = Gh(files_call(*pages))
+        gh = Gh(pr_head_call(), files_call(*pages))
         with mock.patch.object(mod, 'gh', gh):
             return gh, mod.diffable_lines(REPO, PR)
 

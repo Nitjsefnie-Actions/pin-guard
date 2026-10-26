@@ -28,8 +28,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent / 'scripts' / 'ci'))
 
 from review_submit import MARKER, current_bot_comments, plan_comments, submit_review
-from screen_run import run_screen
-from status_comment import BOT_LOGIN, upsert_status
+from screen_run import ScreenOutcome, run_screen
+from status_comment import BOT_LOGIN, inert, upsert_status
 
 _HUNK = re.compile(r'^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@')
 
@@ -85,7 +85,7 @@ def deliver(repo, pr, head_sha, candidates):
     inline, body_only = plan_comments(candidates, existing, diffable_lines(repo, pr))
     if not inline and not body_only:
         return
-    body = '\n'.join([MARKER, *(f'- {path}:{line}' for path, line, _ in body_only)])
+    body = '\n'.join([MARKER, *(f'- {inert(f"{path}:{line}")}' for path, line, _ in body_only)])
     submit_review(gh, repo, pr, head_sha, body, inline, BOT_LOGIN)
 
 
@@ -106,7 +106,21 @@ def main():
     head_sha = os.environ.get('PIN_GUARD_HEAD_SHA', '')
     fail_on = os.environ.get('PIN_GUARD_FAIL_ON_CANDIDATES', '') == 'true'
 
-    outcome = run_screen(repo, pr, token=token)
+    # The screen reads the PR at its CURRENT head through the API, while the
+    # event's SHA labels the review and the status: screen only when they are
+    # still the same commit, and refuse a moved head outright.
+    try:
+        current = gh('api', f'repos/{repo}/pulls/{pr}', '--jq', '.headRefOid').strip()
+    except Exception as probe:
+        outcome = ScreenOutcome('could-not-screen', (), f'the pull request head could not be read: {probe}')
+    else:
+        if current != head_sha:
+            outcome = ScreenOutcome(
+                'could-not-screen', (),
+                f'the pull request head moved since the event: the event head was {head_sha}, '
+                f'the pull request head is now {current}')
+        else:
+            outcome = run_screen(repo, pr, token=token)
 
     candidates, error = (), ''
     if outcome.status == 'clean':

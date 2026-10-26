@@ -134,6 +134,15 @@ class StatusBody(unittest.TestCase):
         self.assertIn('- ' + mod.inert('tests/x.py:7'), body)
         self.assertIn('- ' + mod.inert('tests/y.py:3'), body)
 
+    def test_a_hostile_path_is_inert_in_the_visible_list_and_exact_in_the_block(self):
+        # A path holding an @mention and backticks cannot ping or break the
+        # rendering: the visible row sits in a code span its own backtick
+        # run cannot close, and the hidden block round-trips the raw path.
+        hostile = 'tests/@user`x`.py'
+        body, _ = mod.status_body(SHA, [(hostile, 1, 'x == "1"')])
+        self.assertIn('- ' + mod.inert(f'{hostile}:1'), body)
+        self.assertEqual(mod.parse_block(body)['candidates'], [[hostile, 1, 'x == "1"']])
+
     def test_a_clean_head_says_so(self):
         body, truncated = mod.status_body(SHA, [], clean=True)
         self.assertFalse(truncated)

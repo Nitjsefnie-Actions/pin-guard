@@ -41,7 +41,10 @@ jobs:
 
 The `with:` block shows **every input with its default**. Omit it and a bare
 `uses:` step behaves the same. `github-token` is the token for the API reads
-and the comment writes; the default `github.token` is sufficient.
+and the comment writes; keep it at the default `github.token` — the action
+finds its own earlier comments as `github-actions[bot]`, the login that
+default token posts as, and a PAT or App token would break that recognition
+and post a fresh status comment on every head.
 
 The `permissions:` block is least-privilege: `contents: read` reads the pull
 request's files at the head, and `pull-requests: write` posts the review and
