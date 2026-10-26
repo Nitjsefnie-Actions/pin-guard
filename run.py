@@ -27,7 +27,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent / 'scripts' / 'ci'))
 
-from review_submit import current_bot_comments, plan_comments, submit_review
+from review_submit import MARKER, current_bot_comments, plan_comments, submit_review
 from screen_run import run_screen
 from status_comment import BOT_LOGIN, upsert_status
 
@@ -74,12 +74,18 @@ def diffable_lines(repo, pr):
 
 
 def deliver(repo, pr, head_sha, candidates):
-    """Comment the head's candidates: inline on the diff, the rest in the review body."""
+    """Comment the head's candidates: inline on the diff, the rest in the review body.
+
+    The review body carries MARKER on its own line: current_bot_comments
+    recognises the action's own earlier comments only under a parent review
+    whose body does, so a markerless body would re-comment every candidate
+    on every later head.
+    """
     existing = current_bot_comments(gh, repo, pr, head_sha, BOT_LOGIN)
     inline, body_only = plan_comments(candidates, existing, diffable_lines(repo, pr))
     if not inline and not body_only:
         return
-    body = '\n'.join(f'- {path}:{line}' for path, line, _ in body_only)
+    body = '\n'.join([MARKER, *(f'- {path}:{line}' for path, line, _ in body_only)])
     submit_review(gh, repo, pr, head_sha, body, inline, BOT_LOGIN)
 
 
