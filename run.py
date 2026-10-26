@@ -108,9 +108,12 @@ def main():
 
     # The screen reads the PR at its CURRENT head through the API, while the
     # event's SHA labels the review and the status: screen only when they are
-    # still the same commit, and refuse a moved head outright.
+    # still the same commit, refuse a moved head outright, and re-probe after
+    # the screen so a push that lands mid-screen is never labeled with the
+    # event's SHA. The pull object's field is `head.sha` (`headRefOid` is the
+    # `gh pr view --json` spelling and is absent from the REST response).
     try:
-        current = gh('api', f'repos/{repo}/pulls/{pr}', '--jq', '.headRefOid').strip()
+        current = json.loads(gh('api', f'repos/{repo}/pulls/{pr}'))['head']['sha']
     except Exception as probe:
         outcome = ScreenOutcome('could-not-screen', (), f'the pull request head could not be read: {probe}')
     else:
@@ -121,6 +124,17 @@ def main():
                 f'the pull request head is now {current}')
         else:
             outcome = run_screen(repo, pr, token=token)
+            try:
+                rescreened = json.loads(gh('api', f'repos/{repo}/pulls/{pr}'))['head']['sha']
+            except Exception as probe:
+                outcome = ScreenOutcome('could-not-screen', (),
+                                        f'the pull request head could not be read after the screen: {probe}')
+            else:
+                if rescreened != current:
+                    outcome = ScreenOutcome(
+                        'could-not-screen', (),
+                        f'the pull request head moved while the screen ran: it was screened at {current}, '
+                        f'the pull request head is now {rescreened}')
 
     candidates, error = (), ''
     if outcome.status == 'clean':
