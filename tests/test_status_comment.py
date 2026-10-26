@@ -12,7 +12,7 @@ spec.loader.exec_module(mod)
 
 REPO, PR = 'o/r', 9
 SHA = 'a' * 40
-BOT = 'github-actions[bot]'
+LOGIN = 'token-owner'
 
 
 class Gh:
@@ -61,7 +61,7 @@ def payload(check):
     return predicate
 
 
-def comment(cid, body, login=BOT, user_type='Bot'):
+def comment(cid, body, login=LOGIN, user_type='Bot'):
     """An issue-comment page item."""
     return {'id': cid, 'user': {'login': login, 'type': user_type}, 'body': body}
 
@@ -87,9 +87,9 @@ class FindStatus(unittest.TestCase):
     def test_the_marker_is_the_pinned_spelling(self):
         self.assertEqual(mod.STATUS_MARKER, '<!-- pin-guard: status -->')
 
-    def found(self, body, login=BOT, user_type='Bot'):
+    def found(self, body, login=LOGIN, user_type='Bot'):
         gh = Gh(listing_call([comment(7, 'an unrelated question'), comment(9, body, login, user_type)]))
-        return gh, mod.find_status(gh, REPO, PR, BOT)
+        return gh, mod.find_status(gh, REPO, PR, LOGIN)
 
     def test_the_action_s_own_status_comment_is_found(self):
         gh, got = self.found('A screen report.\n\n' + mod.STATUS_MARKER)
@@ -111,11 +111,13 @@ class FindStatus(unittest.TestCase):
         _, got = self.found(f'A quote of a candidate:\n```\nx  # {mod.STATUS_MARKER}\n```')
         self.assertIsNone(got)
 
-    def test_a_non_bot_author_is_not_the_action(self):
-        _, got = self.found('A screen report.\n\n' + mod.STATUS_MARKER, login=BOT, user_type='User')
-        _, got_too = self.found('A screen report.\n\n' + mod.STATUS_MARKER, login='someone-else')
+    def test_the_identity_is_the_login_whatever_type_carries_it(self):
+        _, got = self.found('A screen report.\n\n' + mod.STATUS_MARKER, login=LOGIN, user_type='User')
+        self.assertEqual(got['id'], 9)
+
+    def test_another_login_is_not_the_action_even_with_the_marker(self):
+        _, got = self.found('A screen report.\n\n' + mod.STATUS_MARKER, login='someone-else')
         self.assertIsNone(got)
-        self.assertIsNone(got_too)
 
     def test_the_wrong_marker_does_not_recognize_a_comment(self):
         _, got = self.found('A review-comment marker only.\n\n<!-- pin-guard: review -->')
@@ -261,7 +263,7 @@ class UpsertStatus(unittest.TestCase):
         gh = Gh(listing_call([comment(9, 'an old question'), comment(55, 'A screen report.\n\n' + mod.STATUS_MARKER)]),
                 (('api', f'repos/{REPO}/issues/{PR}/comments/55', '--method', 'PATCH', '--input', '-'),
                  payload({'body': body}), json.dumps({'html_url': 'https://example.com/c/55'})))
-        got = mod.upsert_status(gh, REPO, PR, SHA, [('tests/x.py', 7, 'x == "1"')])
+        got = mod.upsert_status(gh, REPO, PR, SHA, [('tests/x.py', 7, 'x == "1"')], bot_login=LOGIN)
         self.assertEqual(got, (True, 'https://example.com/c/55', False))
         # Only the listing read and the one edit: no second write of any kind.
         self.assertEqual(len(gh.calls), 2)
@@ -271,12 +273,12 @@ class UpsertStatus(unittest.TestCase):
         gh = Gh(listing_call([comment(55, 'A screen report.\n\n' + mod.STATUS_MARKER)]),
                 (('api', f'repos/{REPO}/issues/{PR}/comments/55', '--method', 'PATCH', '--input', '-'),
                  payload({'body': body}), json.dumps({'html_url': 'https://example.com/c/55'})))
-        got = mod.upsert_status(gh, REPO, PR, SHA, [], clean=True)
+        got = mod.upsert_status(gh, REPO, PR, SHA, [], bot_login=LOGIN, clean=True)
         self.assertEqual(got, (True, 'https://example.com/c/55', False))
 
     def test_a_clean_head_with_no_earlier_status_comment_posts_nothing(self):
         gh = Gh(listing_call([]))
-        got = mod.upsert_status(gh, REPO, PR, SHA, [], clean=True)
+        got = mod.upsert_status(gh, REPO, PR, SHA, [], bot_login=LOGIN, clean=True)
         self.assertEqual(got, (False, '', False))
         # The control: the double has no modeled write, so any POST or PATCH
         # attempt would have raised; exactly the one read happened.
@@ -287,7 +289,7 @@ class UpsertStatus(unittest.TestCase):
         gh = Gh(listing_call([]),
                 (('api', f'repos/{REPO}/issues/{PR}/comments', '--method', 'POST', '--input', '-'),
                  payload({'body': body}), json.dumps({'html_url': 'https://example.com/c/56'})))
-        got = mod.upsert_status(gh, REPO, PR, SHA, [('tests/x.py', 7, 'x == "1"')],
+        got = mod.upsert_status(gh, REPO, PR, SHA, [('tests/x.py', 7, 'x == "1"')], bot_login=LOGIN,
                                 error=None)
         self.assertEqual(got, (True, 'https://example.com/c/56', False))
 
@@ -296,7 +298,7 @@ class UpsertStatus(unittest.TestCase):
         gh = Gh(listing_call([]),
                 (('api', f'repos/{REPO}/issues/{PR}/comments', '--method', 'POST', '--input', '-'),
                  payload({'body': body}), json.dumps({'html_url': 'https://example.com/c/57'})))
-        got = mod.upsert_status(gh, REPO, PR, SHA, [], error='boom')
+        got = mod.upsert_status(gh, REPO, PR, SHA, [], bot_login=LOGIN, error='boom')
         self.assertEqual(got, (True, 'https://example.com/c/57', False))
 
     def test_a_truncated_status_comment_reports_its_truncation(self):
@@ -310,7 +312,7 @@ class UpsertStatus(unittest.TestCase):
         gh = Gh(listing_call([]),
                 (('api', f'repos/{REPO}/issues/{PR}/comments', '--method', 'POST', '--input', '-'),
                  truncated_body, json.dumps({'html_url': 'https://example.com/c/58'})))
-        got = mod.upsert_status(gh, REPO, PR, SHA, [('tests/' + 'a' * 70000 + '.py', 1, 'x == "1"')])
+        got = mod.upsert_status(gh, REPO, PR, SHA, [('tests/' + 'a' * 70000 + '.py', 1, 'x == "1"')], bot_login=LOGIN)
         self.assertEqual(got[0], True)
         self.assertEqual(got[2], True)
 

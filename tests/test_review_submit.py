@@ -13,7 +13,7 @@ spec.loader.exec_module(mod)
 
 REPO, PR = 'o/r', 9
 SHA = 'a' * 40
-BOT = 'github-actions[bot]'
+LOGIN = 'token-owner'
 BODY = f'Screened by the pin-test screen.\n\n{mod.MARKER}'
 
 
@@ -62,12 +62,12 @@ def payload(check):
     return predicate
 
 
-def review(rid, body, login=BOT, user_type='Bot'):
+def review(rid, body, login=LOGIN, user_type='Bot'):
     """A review page item."""
     return {'id': rid, 'user': {'login': login, 'type': user_type}, 'body': body}
 
 
-def comment(cid, rid, path, line, body, *, commit_id=SHA, reply_to=None, login=BOT, user_type='Bot'):
+def comment(cid, rid, path, line, body, *, commit_id=SHA, reply_to=None, login=LOGIN, user_type='Bot'):
     """A pull-request inline comment page item; reply_to models in_reply_to_id."""
     item = {'id': cid, 'pull_request_review_id': rid, 'path': path, 'line': line,
             'commit_id': commit_id, 'body': body, 'user': {'login': login, 'type': user_type}}
@@ -94,7 +94,7 @@ class CurrentBotComments(unittest.TestCase):
 
     def current(self, comments, reviews):
         gh = Gh(comments_call(comments), reviews_call(reviews))
-        got = mod.current_bot_comments(gh, REPO, PR, SHA, BOT)
+        got = mod.current_bot_comments(gh, REPO, PR, SHA, LOGIN)
         return gh, got
 
     def test_the_markers_are_the_pinned_spellings(self):
@@ -133,12 +133,18 @@ class CurrentBotComments(unittest.TestCase):
             [review(10, f'Findings:\n{quoted}')])
         self.assertEqual(got, [])
 
-    def test_a_non_bot_author_is_not_the_action(self):
+    def test_the_identity_is_the_login_whatever_type_carries_it(self):
         _, got = self.current(
-            [comment(1, 10, 'tests/x.py', 7, mod.render_candidate('x == "1"')),
-             comment(2, 10, 'tests/x.py', 8, mod.render_candidate('y == "2"'), login=BOT, user_type='User'),
-             comment(3, 11, 'tests/x.py', 9, mod.render_candidate('z == "3"'))],
-            [review(10, BODY, login=BOT, user_type='User'), review(11, BODY, login='someone-else')])
+            [comment(1, 10, 'tests/x.py', 7, mod.render_candidate('x == "1"'), login=LOGIN, user_type='User')],
+            [review(10, BODY, login=LOGIN, user_type='User')])
+        self.assertEqual(len(got), 1)
+        self.assertEqual(got[0]['quoted_text'], 'x == "1"')
+
+    def test_another_login_is_not_the_action_even_with_the_marker(self):
+        _, got = self.current(
+            [comment(1, 10, 'tests/x.py', 7, mod.render_candidate('x == "1"'), login='someone-else'),
+             comment(2, 11, 'tests/y.py', 3, mod.render_candidate('y == "2"'))],
+            [review(10, BODY), review(11, BODY, login='someone-else')])
         self.assertEqual(got, [])
 
     def test_the_wrong_marker_does_not_recognize_a_review(self):
@@ -174,7 +180,7 @@ class CurrentBotComments(unittest.TestCase):
                       for n in range(30)]
         last = comment(30, 10, 'tests/x.py', 7, mod.render_candidate('the thirty first'))
         gh = Gh(comments_call(first_page, [last]), reviews_call([review(10, BODY)]))
-        got = mod.current_bot_comments(gh, REPO, PR, SHA, BOT)
+        got = mod.current_bot_comments(gh, REPO, PR, SHA, LOGIN)
         self.assertEqual(len(got), 31)
         self.assertEqual(got[30]['quoted_text'], 'the thirty first')
         candidates = ([(f'tests/p{n}.py', n + 1, f'x{n} == "1"') for n in range(30)]
@@ -272,12 +278,12 @@ class SubmitReview(unittest.TestCase):
     def test_a_review_is_posted_and_its_url_returned(self):
         gh = Gh(self.review_call([('tests/x.py', 7, 'x == "1"')],
                                  json.dumps({'html_url': 'https://example.com/r/1'})))
-        got = mod.submit_review(gh, REPO, PR, SHA, BODY, [('tests/x.py', 7, 'x == "1"')], BOT)
+        got = mod.submit_review(gh, REPO, PR, SHA, BODY, [('tests/x.py', 7, 'x == "1"')], LOGIN)
         self.assertEqual(got, ['https://example.com/r/1'])
 
     def test_a_body_only_review_still_posts(self):
         gh = Gh(self.review_call([], json.dumps({'html_url': 'https://example.com/r/2'})))
-        got = mod.submit_review(gh, REPO, PR, SHA, BODY, [], BOT)
+        got = mod.submit_review(gh, REPO, PR, SHA, BODY, [], LOGIN)
         self.assertEqual(got, ['https://example.com/r/2'])
 
     def test_a_422_splits_the_comments_across_fresh_reviews(self):
@@ -288,7 +294,7 @@ class SubmitReview(unittest.TestCase):
                 self.review_call([('tests/x.py', 7, 'x == "1"')], json.dumps({'html_url': 'https://example.com/r/3'})),
                 self.review_call([('tests/y.py', 3, 'y == "2"')], json.dumps({'html_url': 'https://example.com/r/4'})))
         got = mod.submit_review(gh, REPO, PR, SHA, BODY,
-                                [('tests/x.py', 7, 'x == "1"'), ('tests/y.py', 3, 'y == "2"')], BOT)
+                                [('tests/x.py', 7, 'x == "1"'), ('tests/y.py', 3, 'y == "2"')], LOGIN)
         self.assertEqual(got, ['https://example.com/r/3', 'https://example.com/r/4'])
         # gh.calls[0] is the refused POST; both halves landed after it.
         accepted = [c for _, stdin in gh.calls[1:] for c in json.loads(stdin)['comments']]
@@ -298,7 +304,7 @@ class SubmitReview(unittest.TestCase):
         error = subprocess.CalledProcessError(1, ['gh'], stderr='gh: HTTP 422: line too long')
         gh = Gh(self.review_call([('tests/x.py', 7, 'x == "1"')], error))
         with self.assertRaises(subprocess.CalledProcessError):
-            mod.submit_review(gh, REPO, PR, SHA, BODY, [('tests/x.py', 7, 'x == "1"')], BOT)
+            mod.submit_review(gh, REPO, PR, SHA, BODY, [('tests/x.py', 7, 'x == "1"')], LOGIN)
         self.assertEqual(len(gh.calls), 1)
 
 

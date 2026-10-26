@@ -8,10 +8,9 @@
 Every function takes a `gh` callable `gh(*args, stdin=None) -> str` as its
 first parameter — the only GitHub seam; tests inject a double that refuses
 any call it does not model and records the calls it does. `stdin` carries a
-write's JSON payload. The action's bot identity is `BOT_LOGIN`; recognition
-is the same rule as the review marker's: the author login compared AND
-`user.type == 'Bot'`, with `STATUS_MARKER` on a line of its own in the
-body — marker text anywhere else never matches.
+write's JSON payload. The action's identity is `bot_login`, the login the
+run's token posts as; recognition is the review marker's rule — the login
+compared plus `STATUS_MARKER` on a line of its own.
 
 The rendered body ends with the marker line and a hidden machine-readable
 block:
@@ -40,7 +39,6 @@ import re
 
 STATUS_MARKER = '<!-- pin-guard: status -->'
 LIMIT = 65536
-BOT_LOGIN = 'github-actions[bot]'
 _BLOCK_PREFIX = '<!-- '
 _BLOCK_SUFFIX = ' -->'
 
@@ -88,14 +86,13 @@ def find_status(gh, repo, pr, bot_login):
 
     Reads `repos/{repo}/issues/{pr}/comments` with `--paginate --slurp`
     (every page's array in one array of pages, flattened here) and returns
-    the one comment authored by `bot_login` (login AND `type == 'Bot'`)
-    whose body carries `STATUS_MARKER` on a line of its own.
+    the one comment authored by `bot_login` whose body carries
+    `STATUS_MARKER` on a line of its own.
     """
     comments = [item for page in json.loads(gh('api', f'repos/{repo}/issues/{pr}/comments', '--paginate', '--slurp'))
                 for item in page]
     for item in comments:
-        user = item.get('user') or {}
-        if user.get('login') == bot_login and user.get('type') == 'Bot' \
+        if (item.get('user') or {}).get('login') == bot_login \
                 and STATUS_MARKER in _own_lines(item.get('body')):
             return item
     return None
@@ -174,17 +171,17 @@ def status_body(head_sha, candidates, *, clean=False, error=None, outcome=None):
     return assemble(0, short), True
 
 
-def upsert_status(gh, repo, pr, head_sha, candidates, *, clean=False, error=None, outcome=None):
+def upsert_status(gh, repo, pr, head_sha, candidates, *, bot_login, clean=False, error=None, outcome=None):
     """Post or edit the status comment; `(posted_or_edited, url, truncated)`.
 
     Finds the action's earlier status comment (`find_status` against
-    `BOT_LOGIN`) and edits it in place, or creates one; a clean head with no
-    earlier status comment posts nothing and returns `(False, '', False)`.
-    `outcome` names the screen's outcome for the hidden block and defaults
-    to what `clean` and `error` imply. The truncated boolean is
-    `status_body`'s.
+    `bot_login`, the login the run's token posts as) and edits it in place,
+    or creates one; a clean head with no earlier status comment posts
+    nothing and returns `(False, '', False)`. `outcome` names the screen's
+    outcome for the hidden block and defaults to what `clean` and `error`
+    imply. The truncated boolean is `status_body`'s.
     """
-    existing = find_status(gh, repo, pr, BOT_LOGIN)
+    existing = find_status(gh, repo, pr, bot_login)
     if clean and existing is None:
         return False, '', False
     body, truncated = status_body(head_sha, candidates, clean=clean, error=error, outcome=outcome)
