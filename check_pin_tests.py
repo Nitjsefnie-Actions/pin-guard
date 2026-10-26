@@ -1352,19 +1352,22 @@ def _screen(args):
     for path, line, text in found:
         print(f'{path}:{line}: {text}')
     blind = 'misses every pin it cannot read as a literal from a source it reads (see --help)'
-    if found:
-        print(f'{len(found)} candidate test line(s) holding or asserting a pinned workflow action or input, '
-              "Dockerfile base image or tool version: judge each against the repository's own rule — no test "
-              'asserts on a pinned version, tag, SHA or digest of any dependency: a workflow `uses:` value (the '
-              "action's SHA, release, version comment or pin shape) or its `with:` inputs, a Dockerfile `FROM` "
-              'base image, a tool version or a package version, and a legitimate bump must never fail a test — '
-              f'and delete those that pin a dependency; this screen {blind}, so it clears nothing it does not list.',
-              file=sys.stderr)
-        return 1
+    summary = (f'{len(found)} candidate test line(s) holding or asserting a pinned workflow action or input, '
+               "Dockerfile base image or tool version: judge each against the repository's own rule — no test "
+               'asserts on a pinned version, tag, SHA or digest of any dependency: a workflow `uses:` value (the '
+               "action's SHA, release, version comment or pin shape) or its `with:` inputs, a Dockerfile `FROM` "
+               'base image, a tool version or a package version, and a legitimate bump must never fail a test — '
+               f'and delete those that pin a dependency; this screen {blind}, so it clears nothing it does not list.')
     if unscreened:
-        print(f'{len(unscreened)} file(s) could not be screened (above); no candidates among the rest proves '
-              'nothing about them, and an empty list is not a proof.', file=sys.stderr)
+        if found:
+            print(summary, file=sys.stderr)
+        else:
+            print(f'{len(unscreened)} file(s) could not be screened (above); no candidates among the rest proves '
+                  'nothing about them, and an empty list is not a proof.', file=sys.stderr)
         return 2
+    if found:
+        print(summary, file=sys.stderr)
+        return 1
     print('no candidate test lines among the workflow, Dockerfile base-image and tool-version pins this screen '
           f'reads; it {blind}, so an empty list is not a proof.', file=sys.stderr)
     return 0

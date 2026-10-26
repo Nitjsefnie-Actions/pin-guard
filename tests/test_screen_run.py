@@ -85,6 +85,25 @@ class RunScreen(unittest.TestCase):
         # A short stderr is the whole reason, unbounded and unstropped inside.
         _, got = self.screen(2, '', 'could not screen Dockerfile: HTTP 404: Not Found\n')
         self.assertEqual(got.detail, 'could not screen Dockerfile: HTTP 404: Not Found')
+        # Each could-not-screen line is parsed into the unscreened names.
+        self.assertEqual(got.unscreened, (('Dockerfile', 'HTTP 404: Not Found'),))
+
+    def test_exit_2_with_rows_keeps_the_candidates_and_names_the_unscreened(self):
+        # A file defeated the screen after rows were found: the outcome is
+        # could-not-screen, the rows survive in candidates, and each stderr
+        # `could not screen <name>: <why>` line is parsed into unscreened.
+        out = ('tests/deploy/container-image.test.ts:23: const NODE_BASE_TAG = "node:24.21.0-bookworm-slim";\n'
+               'tests/test_wf.py:7: assert a == "b", "see c:12: d"\n')
+        err = ('could not screen Dockerfile: HTTP 404: Not Found\n'
+               '1 file(s) could not be screened (above); no candidates among the rest proves nothing about them, '
+               'and an empty list is not a proof.\n')
+        _, got = self.screen(2, out, err)
+        self.assertEqual(got.status, 'could-not-screen')
+        self.assertEqual(got.candidates, (
+            ('tests/deploy/container-image.test.ts', 23, 'const NODE_BASE_TAG = "node:24.21.0-bookworm-slim";'),
+            ('tests/test_wf.py', 7, 'assert a == "b", "see c:12: d"')))
+        self.assertEqual(got.unscreened, (('Dockerfile', 'HTTP 404: Not Found'),))
+        self.assertIn('could not screen Dockerfile', got.detail)
 
     def test_a_signal_names_the_signal(self):
         _, got = self.screen(-9, '', '')

@@ -227,6 +227,24 @@ class Action(unittest.TestCase):
         self.assertEqual([args for args, _ in gh.calls if '--method' in args],
                          [status_post(status_body_check())[0]])
 
+    def test_a_could_not_screen_outcome_still_delivers_its_rows_and_fails(self):
+        # A file defeated the screen after rows were found: the rows are still
+        # delivered, the status comment names the unscreened files, and the
+        # job fails either way.
+        seam = Screen(screen_run.ScreenOutcome('could-not-screen', CANDIDATES, '',
+                                               (('Dockerfile', 'HTTP 404: Not Found'),)))
+        gh = Gh(files_call([diff_file('tests/on.py', *MIXED_PATCH)]),
+                pr_comments_call(), pr_reviews_call(),
+                review_post(payload(EXPECTED_REVIEW), REVIEW_URL),
+                status_find_call(),
+                status_post(status_body_check('2 candidate line(s)',
+                                              'could not be screened: Dockerfile: HTTP 404: Not Found')))
+        code, _ = self.action(gh, seam)
+        self.assertEqual(code, 1)
+        self.assertEqual([args for args, _ in gh.calls if '--method' in args],
+                         [review_post(payload(EXPECTED_REVIEW), REVIEW_URL)[0],
+                          status_post(status_body_check())[0]])
+
     def test_a_truncated_status_comment_fails_even_when_fail_on_is_off(self):
         # One oversized candidate off the diff: the review carries it as a
         # body row, and the status comment cannot hold the full list.
