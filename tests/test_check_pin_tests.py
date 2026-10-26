@@ -631,12 +631,12 @@ class Main(unittest.TestCase):
         self.assertEqual((code, out), (2, []))
         self.assertEqual(err[0], f'could not screen the tree at {SHA_HEAD}: GitHub truncated the recursive listing')
 
-    def test_candidates_and_unscreened_files_exit_1_and_name_both(self):
+    def test_candidates_and_unscreened_files_exit_2_and_name_both(self):
         code, out, err, _ = self.run_main(
             diff('tests/test_pkg.py', 'assert v == "1.2.3"'),
             {'package.json': '{"dependencies": {"a": "1.2.3"}}', 'Dockerfile': http_fail()},
             {'tests/test_pkg.py': 'PKG = json.loads((ROOT / "package.json").read_text())\n'})
-        self.assertEqual(code, 1)
+        self.assertEqual(code, 2)
         self.assertEqual(out, ['tests/test_pkg.py:1: assert v == "1.2.3"'])
         self.assertEqual(err, ['could not screen Dockerfile: HTTP 404: Not Found', self.SUMMARY_FOUND.format(1)])
 

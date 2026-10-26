@@ -109,19 +109,24 @@ def main():
     outcome = run_screen(repo, pr, token=token)
 
     candidates, error = (), ''
-    if outcome.status == 'candidates':
+    if outcome.status == 'clean':
+        pass
+    elif outcome.status in ('candidates', 'could-not-screen'):
         candidates = outcome.candidates
-        try:
-            deliver(repo, pr, head_sha, candidates)
-        except Exception as delivery:  # stated in the status comment, never silent
-            reason = str(delivery)
-            stderr = getattr(delivery, 'stderr', None)
-            if stderr:
-                reason += f': {stderr.strip()}'
-            error = f'the review could not be posted: {reason}'
-    elif outcome.status == 'could-not-screen':
-        error = outcome.detail
-    elif outcome.status != 'clean':
+        if candidates:
+            try:
+                deliver(repo, pr, head_sha, candidates)
+            except Exception as delivery:  # stated in the status comment, never silent
+                reason = str(delivery)
+                if getattr(delivery, 'stderr', None):
+                    reason += f': {delivery.stderr.strip()}'
+                error = f'the review could not be posted: {reason}'
+        if outcome.status == 'could-not-screen':
+            screen_failure = (f'{len(outcome.unscreened)} file(s) could not be screened: '
+                              + ', '.join(f'{name}: {why}' for name, why in outcome.unscreened)
+                              ) if outcome.unscreened else outcome.detail
+            error = f'{screen_failure}; {error}' if error else screen_failure
+    else:
         # Fail closed: an unknown status must never read as a clean screen.
         error = f'the screen reported an unknown status {outcome.status!r}'
 
