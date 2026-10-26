@@ -208,54 +208,35 @@ class Action(unittest.TestCase):
                          [user_call()[0], pr_head_call()[0], pr_head_call()[0], status_find_call()[0]])
 
     def test_an_unidentifiable_token_fails_before_any_screen_or_write(self):
-        # GET /user is the run's first call: when it fails, nothing runs.
-        error = subprocess.CalledProcessError(1, ['gh'], stderr='gh: HTTP 401: Bad credentials')
-        gh = Gh((('api', 'user'), None, error))
-        code, err = self.action(gh, Refuse())
-        self.assertEqual(code, 1)
-        self.assertIn('the token could not be identified', err)
-        self.assertEqual([args for args, _ in gh.calls], [('api', 'user')])
+        # GET /user is the run's first call; any failure - a 401, or the 403
+        # "Resource not accessible by integration" an App installation token
+        # gets - fails the run before any screen or write, gh's stderr named.
+        for stderr in ('gh: HTTP 401: Bad credentials',
+                       'gh: HTTP 403: Resource not accessible by integration'):
+            gh = Gh((('api', 'user'), None, subprocess.CalledProcessError(1, ['gh'], stderr=stderr)))
+            code, err = self.action(gh, Refuse())
+            self.assertEqual(code, 1)
+            self.assertIn('the token could not be identified', err)
+            self.assertIn(stderr.split(': ', 1)[1], err)
+            self.assertEqual([args for args, _ in gh.calls], [('api', 'user')])
 
     def test_the_workflow_s_own_token_is_known_without_a_login_read(self):
-        # PIN_GUARD_DEFAULT_TOKEN=true: the workflow's token is an App
-        # installation token and GET /user would 403 for it, so the login is
-        # never read - no user call is modeled, and one would refuse the run.
+        # PIN_GUARD_DEFAULT_TOKEN=true: GET /user would 403 for an
+        # installation token, so no user call is modeled - one would refuse.
         earlier = {'id': 7, 'user': {'login': 'github-actions[bot]', 'type': 'Bot'},
                    'body': status_comment.status_body('b' * 40, [('tests/old.py', 1, 'old == "1"')])[0]}
         patch_args = ('api', f'repos/{REPO}/issues/comments/7', '--method', 'PATCH', '--input', '-')
-        gh = Gh(pr_head_call(), pr_head_call(), status_find_call([earlier]), nested_patch_404(),
-                (patch_args, status_body_check(f'Pin-test screen of head {SHA}', 'This head is clean'),
-                 json.dumps({'html_url': 'https://example.com/s/7'})))
-        code, _ = self.action(gh, Screen(screen_run.ScreenOutcome('clean', (), '')),
-                              env={'PIN_GUARD_DEFAULT_TOKEN': 'true'})
-        self.assertEqual(code, 0)
-        self.assertEqual(gh.calls[0], (pr_head_call()[0], None))
-        self.assertEqual([args for args, _ in gh.calls if '--method' in args], [patch_args])
-
-    def test_the_default_token_screens_and_posts_without_a_login_read(self):
         gh = Gh(pr_head_call(), pr_head_call(), files_call([diff_file('tests/on.py', *MIXED_PATCH)]),
-                pr_comments_call(), pr_reviews_call(),
-                review_post(payload(EXPECTED_REVIEW), REVIEW_URL),
-                status_find_call(),
-                status_post(status_body_check(f'Pin-test screen of head {SHA}: 2 candidate line(s).',
-                                              '- ' + status_comment.inert('tests/on.py:2'))))
+                pr_comments_call(), pr_reviews_call(), review_post(payload(EXPECTED_REVIEW), REVIEW_URL),
+                status_find_call([earlier]), nested_patch_404(),
+                (patch_args, status_body_check(f'Pin-test screen of head {SHA}', 'candidate line(s)'),
+                 json.dumps({'html_url': 'https://example.com/s/7'})))
         code, _ = self.action(gh, Screen(screen_run.ScreenOutcome('candidates', CANDIDATES, '')),
                               env={'PIN_GUARD_DEFAULT_TOKEN': 'true'})
         self.assertEqual(code, 0)
         self.assertEqual(gh.calls[0], (pr_head_call()[0], None))
-
-    def test_an_installation_token_without_the_flag_refuses_before_any_screen(self):
-        # GET /user answers 403 "Resource not accessible by integration" for
-        # an installation token; without the default-token signal the run
-        # cannot know its identity, so it fails closed before any screen.
-        error = subprocess.CalledProcessError(1, ['gh'],
-                                              stderr='gh: HTTP 403: Resource not accessible by integration')
-        gh = Gh((('api', 'user'), None, error))
-        code, err = self.action(gh, Refuse())
-        self.assertEqual(code, 1)
-        self.assertIn('the token could not be identified', err)
-        self.assertIn('Resource not accessible by integration', err)
-        self.assertEqual([args for args, _ in gh.calls], [('api', 'user')])
+        self.assertEqual([args for args, _ in gh.calls if '--method' in args],
+                         [review_post(payload(EXPECTED_REVIEW), REVIEW_URL)[0], patch_args])
 
     def test_the_screen_receives_the_pr_coordinates_and_the_token(self):
         gh = Gh(user_call(), pr_head_call(), pr_head_call(), status_find_call())
