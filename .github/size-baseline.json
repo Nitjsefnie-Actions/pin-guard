@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "baseline": {
-    "check_pin_tests.py": 1374,
+    "check_pin_tests.py": 1377,
     "tests/test_check_pin_tests.py": 2291
   }
 }
