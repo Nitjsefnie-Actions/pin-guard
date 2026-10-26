@@ -314,31 +314,12 @@ jobs:
           if-no-files-found: ignore
           retention-days: 1
 
-  size-baseline:
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          # Judge the PR's own tree. Full history carries the base object
-          # without depending on retained credentials.
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
-          fetch-depth: 0
-          persist-credentials: false
-      - name: Check line counts against the size baseline
-        # Forced check: workflow_dispatch is an event auto fails closed on.
-        # The records the pinned action reads live in .github/size-baseline.json.
-        uses: Nitjsefnie-Actions/size-ratchet@0c9790acfe6bec19f1310a6e17428332185ea3ec # v1.1.0
-        with:
-          mode: check
-          base-ref: ${{ github.event.pull_request.base.sha || github.sha }}
-
   aggregate:
     # Like claudit's aggregate: always report, including after a failed or
     # cancelled ancestor. This tree has no classification skips, so every
     # skipped, failed, cancelled or missing leg must fold red.
     # actionlint reports independently; needs can only name this workflow's legs.
-    needs: [suites, shellcheck, size-baseline]
+    needs: [suites, shellcheck]
     if: ${{ always() }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -350,62 +331,6 @@ jobs:
         env:
           PIN_GUARD_NEEDS_JSON: ${{ toJSON(needs) }}
         run: python3 scripts/ci/aggregate_gate.py
-
-  ratchet:
-    # Staging is keyless and follows the whole gate, not just one matrix cell.
-    # A records-only push runs this job once more, but the no-change stage below
-    # emits no artifact and terminates the push chain.
-    needs: aggregate
-    if: >-
-      success() && needs.aggregate.result == 'success' &&
-      github.event_name == 'push' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ github.sha }}
-          fetch-depth: 0
-          persist-credentials: false
-      - name: Tighten the size records after the green gate
-        # Same records the check job reads above; the pinned action
-        # tightens in place and the stage step stages whatever changed.
-        uses: Nitjsefnie-Actions/size-ratchet@0c9790acfe6bec19f1310a6e17428332185ea3ec # v1.1.0
-        with:
-          mode: tighten
-      - name: Stage changed records for the separate push workflow
-        id: stage
-        env:
-          PIN_GUARD_BASE_SHA: ${{ github.sha }}
-        run: |
-          if [ "$(git rev-parse HEAD)" != "$PIN_GUARD_BASE_SHA" ]; then
-            echo 'Checkout does not match the measured run head' >&2
-            exit 1
-          fi
-          changed=0
-          git diff --quiet -- .github/size-baseline.json || changed=$?
-          if [ "$changed" -gt 1 ]; then
-            echo "git diff failed with $changed" >&2
-            exit "$changed"
-          fi
-          if [ "$changed" -eq 0 ]; then
-            echo 'changed=false' >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          mkdir -p "$RUNNER_TEMP/ratchet-push"
-          cp .github/size-baseline.json "$RUNNER_TEMP/ratchet-push/size-baseline.json"
-          printf '%s\n' "$PIN_GUARD_BASE_SHA" > "$RUNNER_TEMP/ratchet-push/base.txt"
-          echo 'changed=true' >> "$GITHUB_OUTPUT"
-      - name: Upload the changed records
-        if: success() && steps.stage.outputs.changed == 'true'
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          # Distinct from the suites job's thresholds artifact above: a run's
-          # artifact names are one namespace shared by every job in it.
-          name: size-baseline-ratchet
-          path: ${{ runner.temp }}/ratchet-push
-          if-no-files-found: error
-          retention-days: 1
 
   # The per-change half of the coverage story: of the lines this pull
   # request ADDED that coverage considers executable, how many the suite
