@@ -157,7 +157,8 @@ MIXED_PATCH = ['@@ -1,3 +1,4 @@', ' ctx', '-deleted', '+added here', '+added too
 ON_CANDIDATE = ('tests/on.py', 2, 'x == "1"')
 OFF_CANDIDATE = ('tests/off.py', 3, 'y == "2"')
 CANDIDATES = (ON_CANDIDATE, OFF_CANDIDATE)
-EXPECTED_REVIEW = {'event': 'COMMENT', 'commit_id': SHA, 'body': '- tests/off.py:3',
+EXPECTED_REVIEW = {'event': 'COMMENT', 'commit_id': SHA,
+                   'body': f'{review_submit.MARKER}\n- tests/off.py:3',
                    'comments': [{'path': 'tests/on.py', 'line': 2, 'side': 'RIGHT',
                                  'body': review_submit.render_candidate('x == "1"')}]}
 REVIEW_URL = json.dumps({'html_url': 'https://example.com/r/1'})
@@ -233,7 +234,8 @@ class Action(unittest.TestCase):
         gh = Gh(files_call(),
                 pr_comments_call(), pr_reviews_call(),
                 review_post(payload({'event': 'COMMENT', 'commit_id': SHA,
-                                     'body': '- tests/off.py:3', 'comments': []}), REVIEW_URL),
+                                     'body': f'{review_submit.MARKER}\n- tests/off.py:3',
+                                     'comments': []}), REVIEW_URL),
                 status_find_call(), status_post(status_body_check('1 candidate line(s)')))
         code, _ = self.action(gh, Screen(screen_run.ScreenOutcome('candidates', (huge,), '')))
         self.assertEqual(code, 1)
@@ -297,6 +299,55 @@ class Action(unittest.TestCase):
         self.assertEqual([args for args, _ in gh.calls if '--method' in args],
                          [review_post(payload(EXPECTED_REVIEW), error)[0],
                           status_post(status_body_check())[0]])
+
+
+    def test_the_posted_review_is_recognized_as_the_action_s_own_at_the_next_screening(self):
+        # The spanning control: what the first delivery puts on the wire is
+        # what current_bot_comments must read back. The head is screened
+        # again with the same candidates and the listings hold exactly the
+        # first delivery's review and comment — so nothing new may be
+        # planned, and the double models no review POST: one would refuse
+        # the run. (A genuinely NEW head re-comments by design: the earlier
+        # comment is outdated there — review_submit's own rule.)
+        files = [diff_file('tests/on.py', *MIXED_PATCH),
+                 diff_file('tests/off.py', '@@ -0,0 +1,4 @@', '+a', '+b', '+y == "2"', '+d')]
+        both_inline = {'event': 'COMMENT', 'commit_id': SHA, 'body': review_submit.MARKER,
+                       'comments': [{'path': path, 'line': line, 'side': 'RIGHT',
+                                     'body': review_submit.render_candidate(text)}
+                                    for path, line, text in CANDIDATES]}
+        gh = Gh(files_call(files), pr_comments_call(), pr_reviews_call(),
+                review_post(payload(both_inline), REVIEW_URL),
+                status_find_call(), status_post(status_body_check()))
+        code, _ = self.action(gh, Screen(screen_run.ScreenOutcome('candidates', CANDIDATES, '')))
+        self.assertEqual(code, 0)
+        review_stdin = next(stdin for args, stdin in gh.calls
+                            if '--input' in args and args[1] == f'repos/{REPO}/pulls/{PR}/reviews')
+        posted = json.loads(review_stdin)
+        # The marker rides the body's first line: the recognition rule
+        # current_bot_comments applies to the parent review. Every candidate
+        # anchored inline, so the body is the marker alone.
+        self.assertEqual(posted['body'].splitlines()[0], review_submit.MARKER)
+        self.assertEqual(posted['body'], review_submit.MARKER)
+
+        reviews_page = [{'id': 10, 'user': {'login': status_comment.BOT_LOGIN, 'type': 'Bot'},
+                         'commit_id': SHA, 'body': posted['body']}]
+        comments_page = [{'id': 11, 'pull_request_review_id': 10,
+                          'user': {'login': status_comment.BOT_LOGIN, 'type': 'Bot'},
+                          'path': inline['path'], 'line': inline['line'], 'commit_id': SHA,
+                          'body': inline['body']} for inline in posted['comments']]
+        earlier_status = {'id': 7, 'user': {'login': status_comment.BOT_LOGIN, 'type': 'Bot'},
+                          'body': status_comment.status_body(SHA, [list(row) for row in CANDIDATES])[0]}
+        patch_args = ('api', f'repos/{REPO}/issues/{PR}/comments/7', '--method', 'PATCH', '--input', '-')
+        gh2 = Gh(files_call(files),
+                 pr_comments_call(comments_page), pr_reviews_call(reviews_page),
+                 status_find_call([earlier_status]),
+                 (patch_args, status_body_check(f'Pin-test screen of head {SHA}'),
+                  json.dumps({'html_url': 'https://example.com/s/7'})))
+        code, _ = self.action(gh2, Screen(screen_run.ScreenOutcome('candidates', CANDIDATES, '')))
+        self.assertEqual(code, 0)
+        # The status is edited in place and nothing else is written: the
+        # existing inline comment absorbed its candidate.
+        self.assertEqual([args for args, _ in gh2.calls if '--method' in args], [patch_args])
 
 
 class DiffableLines(unittest.TestCase):
