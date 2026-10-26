@@ -33,6 +33,7 @@
 !.github/workflows/ratchet-push.yml
 !.github/workflows/scorecard.yml
 !.github/workflows/secrets.yml
+!.github/workflows/size-baseline.yml
 !.github/workflows/tests.yml
 !.github/workflows/requirements.txt
 !.github/workflows/requirements-pip-audit.txt

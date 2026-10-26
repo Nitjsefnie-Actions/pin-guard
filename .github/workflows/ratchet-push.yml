@@ -1,6 +1,6 @@
 name: ratchet push
 
-# The measuring jobs stay keyless: tests gates coverage and the size records,
+# The measuring jobs stay keyless: tests gates coverage,
 # comment share gates the per-file comment records. Each stages data only when
 # its record tightens. The deploy key lives in main-push and reaches only this
 # separate, data-only job. Its token can list and download artifacts; SSH
@@ -67,24 +67,19 @@ jobs:
             | sort -u)"
           ratchet=false
           records=false
-          size=false
           if printf '%s\n' "$names" | grep -qx 'ratchet-push'; then
             ratchet=true
           fi
           if printf '%s\n' "$names" | grep -qx 'comment-share-ratchet'; then
             records=true
           fi
-          if printf '%s\n' "$names" | grep -qx 'size-baseline-ratchet'; then
-            size=true
-          fi
           any=false
-          if [ "$ratchet" = true ] || [ "$records" = true ] || [ "$size" = true ]; then
+          if [ "$ratchet" = true ] || [ "$records" = true ]; then
             any=true
           fi
           {
             echo "ratchet=$ratchet"
             echo "records=$records"
-            echo "size=$size"
             echo "any=$any"
           } >> "$GITHUB_OUTPUT"
 
@@ -97,17 +92,6 @@ jobs:
         with:
           name: ratchet-push
           path: ${{ runner.temp }}/ratchet-data
-          run-id: ${{ github.event.workflow_run.id }}
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Download the size-baseline records
-        # Each gate has its own artifact name and measured base. This is
-        # also a cross-run download, capped by the job's actions: read.
-        if: steps.list.outputs.size == 'true'
-        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          name: size-baseline-ratchet
-          path: ${{ runner.temp }}/size-data
           run-id: ${{ github.event.workflow_run.id }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
@@ -128,7 +112,6 @@ jobs:
           PIN_GUARD_MASTER_PUSH_DEPLOY_KEY: ${{ secrets.MASTER_PUSH_DEPLOY_KEY }}
           PIN_GUARD_REPO: ${{ github.repository }}
           PIN_GUARD_RATCHET_SELECTED: ${{ steps.list.outputs.ratchet }}
-          PIN_GUARD_SIZE_SELECTED: ${{ steps.list.outputs.size }}
           PIN_GUARD_RECORDS_SELECTED: ${{ steps.list.outputs.records }}
         run: |
           # Fail closed when the environment is missing its secret: with
@@ -142,10 +125,6 @@ jobs:
           # without its promised JSON is a broken handoff, not a no-raise.
           if [ "$PIN_GUARD_RATCHET_SELECTED" = true ] && [ ! -f "$RUNNER_TEMP/ratchet-data/ci-thresholds.json" ]; then
             echo "artifact ratchet-push is missing ci-thresholds.json" >&2
-            exit 1
-          fi
-          if [ "$PIN_GUARD_SIZE_SELECTED" = true ] && [ ! -f "$RUNNER_TEMP/size-data/size-baseline.json" ]; then
-            echo "artifact size-baseline-ratchet is missing size-baseline.json" >&2
             exit 1
           fi
           if [ "$PIN_GUARD_RECORDS_SELECTED" = true ] && [ ! -f "$RUNNER_TEMP/comment-share-data/comment-share.json" ]; then
@@ -231,66 +210,6 @@ jobs:
             blob="$(git -C "$scratch" hash-object -w "$current")"
             git -C "$scratch" update-index --add --cacheinfo 100644 "$blob" .github/ci-thresholds.json
           fi
-          if [ "$PIN_GUARD_SIZE_SELECTED" = true ]; then
-            if [ ! -s "$RUNNER_TEMP/size-data/base.txt" ]; then
-              echo "the size data carried no base; the measuring job is broken" >&2
-              exit 1
-            fi
-            base="$(cat "$RUNNER_TEMP/size-data/base.txt")"
-            current="$RUNNER_TEMP/current-size.json"
-            # Adoption commits the seed. A missing file on current main is
-            # a deletion requiring review, never permission to auto-create it.
-            if ! git -C "$scratch" show "$fetched:.github/size-baseline.json" > "$current"; then
-              echo "Current main has no size records; deletion requires review" >&2
-              exit 1
-            fi
-            if [ "$fetched" != "$base" ]; then
-              # The staged tightening describes the tree the gate measured: a
-              # tracked path other than this records file moving since makes
-              # it stale, and drop it.
-              if [ -n "$(git -C "$scratch" diff --name-only "$base" "$fetched" -- ':/' ':(exclude).github/size-baseline.json')" ]; then
-                echo "::notice::Main moved under the measured tree; the next main push measures again"
-                {
-                  echo "### Dropped: main moved under the measured tree"
-                  echo "This run's tightening is dropped; the next main push measures and tightens instead."
-                } >> "$GITHUB_STEP_SUMMARY"
-                exit 0
-              fi
-              # Merge the data alone: an intervening hand-tightened record
-              # must survive, and a conflicting change waits for a fresh
-              # measure.
-              if ! git -C "$scratch" show "$base:.github/size-baseline.json" > "$RUNNER_TEMP/base-size.json"; then
-                echo "::notice::Ancestor records are unreadable; the next main push measures again"
-                {
-                  echo "### Dropped: ancestor records could not be read"
-                  echo "This run's tightening is dropped; the next main push measures and tightens instead."
-                } >> "$GITHUB_STEP_SUMMARY"
-                exit 0
-              fi
-              if ! git merge-file "$current" "$RUNNER_TEMP/base-size.json" \
-                "$RUNNER_TEMP/size-data/size-baseline.json"; then
-                echo "::notice::Records changes conflict; the next main push measures again"
-                {
-                  echo "### Dropped: records merge conflicted"
-                  echo "This run's tightening is dropped; the next main push measures and tightens instead."
-                } >> "$GITHUB_STEP_SUMMARY"
-                exit 0
-              fi
-            else
-              cp "$RUNNER_TEMP/size-data/size-baseline.json" "$current"
-            fi
-            if ! python3 -I -m json.tool "$current" >/dev/null; then
-              echo "::notice::Merged records are invalid; the next main push measures again"
-              {
-                echo "### Dropped: records failed JSON validation"
-                echo "This run's tightening is dropped; the next main push measures and tightens instead."
-              } >> "$GITHUB_STEP_SUMMARY"
-              exit 0
-            fi
-            blob="$(git -C "$scratch" hash-object -w "$current")"
-            git -C "$scratch" update-index --add --cacheinfo 100644 "$blob" .github/size-baseline.json
-            message='chore(ratchet): tighten the size records (automated)'
-          fi
           if [ "$PIN_GUARD_RECORDS_SELECTED" = true ]; then
             if [ ! -s "$RUNNER_TEMP/comment-share-data/base.txt" ]; then
               echo "the comment-share data carried no base; the measuring job is broken" >&2
@@ -305,7 +224,7 @@ jobs:
               exit 1
             fi
             if [ "$fetched" != "$base" ]; then
-              # Same staleness check as the size-records branch.
+              # Same staleness check as the thresholds branch.
               if [ -n "$(git -C "$scratch" diff --name-only "$base" "$fetched" -- ':/' ':(exclude).github/comment-share.json')" ]; then
                 echo "::notice::Main moved under the measured tree; the next main push measures again"
                 {
