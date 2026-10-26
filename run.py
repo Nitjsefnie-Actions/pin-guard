@@ -108,20 +108,28 @@ def main():
     head_sha = os.environ.get('PIN_GUARD_HEAD_SHA', '')
     fail_on = os.environ.get('PIN_GUARD_FAIL_ON_CANDIDATES', '') == 'true'
 
-    # The login the token posts as.
-    try:
-        login = json.loads(gh('api', 'user'))['login']
-    except Exception as probe:
-        print(f'pin-guard: the token could not be identified ({probe}); no screen ran '
-              'and no comment was read or posted.', file=sys.stderr)
-        return 1
+    # Known for the workflow's own token; read for a user token. GET /user
+    # answers 403 for an installation token, so the default never calls it,
+    # and a token that is neither fails closed here.
+    if os.environ.get('PIN_GUARD_DEFAULT_TOKEN', '') == 'true':
+        login = 'github-actions[bot]'
+    else:
+        try:
+            login = json.loads(gh('api', 'user'))['login']
+        except Exception as probe:
+            reason = str(probe)
+            stderr = getattr(probe, 'stderr', None)
+            if stderr:
+                reason += f': {stderr.strip()}'
+            print(f'pin-guard: the token could not be identified ({reason}); no screen ran '
+                  'and no comment was read or posted.', file=sys.stderr)
+            return 1
 
     # The screen reads the PR at its CURRENT head through the API, while the
     # event's SHA labels the review and the status: screen only when they are
-    # still the same commit, refuse a moved head outright, and re-probe after
-    # the screen so a push that lands mid-screen is never labeled with the
-    # event's SHA. The pull object's field is `head.sha` (`headRefOid` is the
-    # `gh pr view --json` spelling and is absent from the REST response).
+    # still the same commit; a push landing mid-screen must never be labeled
+    # with the event's SHA. The REST field is `head.sha` (`headRefOid` is the
+    # `gh pr view --json` spelling).
     try:
         current = json.loads(gh('api', f'repos/{repo}/pulls/{pr}'))['head']['sha']
     except Exception as probe:
