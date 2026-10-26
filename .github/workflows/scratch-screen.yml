@@ -1,0 +1,20 @@
+name: screen observation
+# A temporary workflow driving this branch's action on its own pull request
+# with the workflow's default token; removed with its branch, never merged.
+on: # zizmor: ignore[dangerous-triggers]
+  pull_request:
+permissions:
+  contents: read
+  pull-requests: write
+concurrency:
+  group: screen-observation-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+jobs:
+  screen:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./
