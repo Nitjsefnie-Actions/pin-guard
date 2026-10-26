@@ -300,7 +300,6 @@ class Action(unittest.TestCase):
                          [review_post(payload(EXPECTED_REVIEW), error)[0],
                           status_post(status_body_check())[0]])
 
-
     def test_the_posted_review_is_recognized_as_the_action_s_own_at_the_next_screening(self):
         # The spanning control: what the first delivery puts on the wire is
         # what current_bot_comments must read back. The head is screened
