@@ -131,7 +131,8 @@ def main():
         error = f'the screen reported an unknown status {outcome.status!r}'
 
     _, _, truncated = upsert_status(gh, repo, pr, head_sha, candidates,
-                                    clean=outcome.status == 'clean', error=error or None)
+                                    clean=outcome.status == 'clean', error=error or None,
+                                    outcome=outcome.status)
     if error or outcome.status == 'could-not-screen' or truncated:
         return 1
     if candidates and fail_on:

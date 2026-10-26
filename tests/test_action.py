@@ -198,7 +198,7 @@ class Action(unittest.TestCase):
                 review_post(payload(EXPECTED_REVIEW), REVIEW_URL),
                 status_find_call(),
                 status_post(status_body_check(f'Pin-test screen of head {SHA}: 2 candidate line(s).',
-                                              '- tests/on.py:2', '- tests/off.py:3')))
+                                              '- ' + status_comment.inert('tests/on.py:2'), '- ' + status_comment.inert('tests/off.py:3'))))
         code, _ = self.action(gh, Screen(screen_run.ScreenOutcome('candidates', CANDIDATES, '')),
                               env={'PIN_GUARD_FAIL_ON_CANDIDATES': 'true'})
         self.assertEqual(code, 1)
@@ -210,7 +210,7 @@ class Action(unittest.TestCase):
         gh = Gh(files_call([diff_file('tests/on.py', *MIXED_PATCH)]),
                 pr_comments_call(), pr_reviews_call(),
                 review_post(payload(EXPECTED_REVIEW), REVIEW_URL),
-                status_find_call(), status_post(status_body_check('- tests/on.py:2', '- tests/off.py:3')))
+                status_find_call(), status_post(status_body_check('- ' + status_comment.inert('tests/on.py:2'), '- ' + status_comment.inert('tests/off.py:3'))))
         code, _ = self.action(gh, Screen(screen_run.ScreenOutcome('candidates', CANDIDATES, '')))
         self.assertEqual(code, 0)
         self.assertEqual([args for args, _ in gh.calls if '--method' in args],
@@ -220,7 +220,7 @@ class Action(unittest.TestCase):
     def test_a_could_not_screen_outcome_states_its_reason_and_exits_1(self):
         detail = 'the screen exceeded its 240s budget and was killed'
         gh = Gh(status_find_call(),
-                status_post(status_body_check(f'The screen could not run: {detail}')))
+                status_post(status_body_check('The screen could not run:', detail)))
         code, _ = self.action(gh, Screen(screen_run.ScreenOutcome('could-not-screen', (), detail)))
         self.assertEqual(code, 1)
         # The failed screen posts the status and nothing else.
