@@ -2,6 +2,7 @@
 import importlib.util
 import json
 import os
+import subprocess
 import unittest
 
 KIT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -70,6 +71,11 @@ def listing_call(*pages):
     """A `--paginate --slurp` listing: one call printing one array of page arrays."""
     return (('api', f'repos/{REPO}/issues/{PR}/comments', '--paginate', '--slurp'),
             None, json.dumps(list(pages)))
+
+
+def nested_patch_404(cid):
+    return (('api', f'repos/{REPO}/issues/{PR}/comments/{cid}', '--method', 'PATCH', '--input', '-'),
+            lambda stdin: True, subprocess.CalledProcessError(1, ['gh'], stderr='gh: Not Found (HTTP 404)'))
 
 
 def block_of(body):
@@ -261,7 +267,8 @@ class UpsertStatus(unittest.TestCase):
     def test_an_existing_status_comment_is_edited_in_place(self):
         body, _ = mod.status_body(SHA, [('tests/x.py', 7, 'x == "1"')])
         gh = Gh(listing_call([comment(9, 'an old question'), comment(55, 'A screen report.\n\n' + mod.STATUS_MARKER)]),
-                (('api', f'repos/{REPO}/issues/{PR}/comments/55', '--method', 'PATCH', '--input', '-'),
+                nested_patch_404(55),
+                (('api', f'repos/{REPO}/issues/comments/55', '--method', 'PATCH', '--input', '-'),
                  payload({'body': body}), json.dumps({'html_url': 'https://example.com/c/55'})))
         got = mod.upsert_status(gh, REPO, PR, SHA, [('tests/x.py', 7, 'x == "1"')], bot_login=LOGIN)
         self.assertEqual(got, (True, 'https://example.com/c/55', False))
@@ -271,7 +278,8 @@ class UpsertStatus(unittest.TestCase):
     def test_a_clean_head_edits_its_earlier_status_comment(self):
         body, _ = mod.status_body(SHA, [], clean=True)
         gh = Gh(listing_call([comment(55, 'A screen report.\n\n' + mod.STATUS_MARKER)]),
-                (('api', f'repos/{REPO}/issues/{PR}/comments/55', '--method', 'PATCH', '--input', '-'),
+                nested_patch_404(55),
+                (('api', f'repos/{REPO}/issues/comments/55', '--method', 'PATCH', '--input', '-'),
                  payload({'body': body}), json.dumps({'html_url': 'https://example.com/c/55'})))
         got = mod.upsert_status(gh, REPO, PR, SHA, [], bot_login=LOGIN, clean=True)
         self.assertEqual(got, (True, 'https://example.com/c/55', False))

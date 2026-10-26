@@ -185,10 +185,9 @@ def upsert_status(gh, repo, pr, head_sha, candidates, *, bot_login, clean=False,
     if clean and existing is None:
         return False, '', False
     body, truncated = status_body(head_sha, candidates, clean=clean, error=error, outcome=outcome)
-    if existing is not None:
-        endpoint = f'repos/{repo}/issues/{pr}/comments/{existing["id"]}'
-    else:
-        endpoint = f'repos/{repo}/issues/{pr}/comments'
+    # The nested per-issue update path is the one GitHub 404s.
+    endpoint = (f'repos/{repo}/issues/comments/{existing["id"]}' if existing is not None
+                else f'repos/{repo}/issues/{pr}/comments')
     out = gh('api', endpoint, '--method', 'PATCH' if existing is not None else 'POST',
              '--input', '-', stdin=json.dumps({'body': body}, ensure_ascii=True))
     return True, json.loads(out)['html_url'], truncated

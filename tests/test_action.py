@@ -151,6 +151,12 @@ def status_find_call(*pages):
             None, json_slurp(*pages))
 
 
+def nested_patch_404():
+    """The nested per-issue PATCH path the update must not take: GitHub 404s it."""
+    return (('api', f'repos/{REPO}/issues/{PR}/comments/7', '--method', 'PATCH', '--input', '-'),
+            lambda stdin: True, subprocess.CalledProcessError(1, ['gh'], stderr='gh: Not Found (HTTP 404)'))
+
+
 def review_post(check, result):
     return (('api', f'repos/{REPO}/pulls/{PR}/reviews', '--method', 'POST', '--input', '-'),
             check, result)
@@ -363,8 +369,9 @@ class Action(unittest.TestCase):
         earlier_body = status_comment.status_body('b' * 40, [('tests/old.py', 1, 'old == "1"')])[0]
         earlier = {'id': 7, 'user': {'login': LOGIN, 'type': 'User'},
                    'body': earlier_body}
-        patch_args = ('api', f'repos/{REPO}/issues/{PR}/comments/7', '--method', 'PATCH', '--input', '-')
+        patch_args = ('api', f'repos/{REPO}/issues/comments/7', '--method', 'PATCH', '--input', '-')
         gh = Gh(user_call(), pr_head_call(), pr_head_call(), status_find_call([earlier]),
+                nested_patch_404(),
                 (patch_args,
                  status_body_check(f'Pin-test screen of head {SHA}', 'This head is clean'),
                  json.dumps({'html_url': 'https://example.com/s/7'})))
@@ -430,10 +437,10 @@ class Action(unittest.TestCase):
                           'body': inline['body']} for inline in posted['comments']]
         earlier_status = {'id': 7, 'user': {'login': LOGIN, 'type': 'User'},
                           'body': status_comment.status_body(SHA, [list(row) for row in CANDIDATES])[0]}
-        patch_args = ('api', f'repos/{REPO}/issues/{PR}/comments/7', '--method', 'PATCH', '--input', '-')
+        patch_args = ('api', f'repos/{REPO}/issues/comments/7', '--method', 'PATCH', '--input', '-')
         gh2 = Gh(user_call(), pr_head_call(), pr_head_call(), files_call(files),
                  pr_comments_call(comments_page), pr_reviews_call(reviews_page),
-                 status_find_call([earlier_status]),
+                 status_find_call([earlier_status]), nested_patch_404(),
                  (patch_args, status_body_check(f'Pin-test screen of head {SHA}'),
                   json.dumps({'html_url': 'https://example.com/s/7'})))
         code, _ = self.action(gh2, Screen(screen_run.ScreenOutcome('candidates', CANDIDATES, '')))
