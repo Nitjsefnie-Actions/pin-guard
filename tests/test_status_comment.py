@@ -143,6 +143,18 @@ class StatusBody(unittest.TestCase):
         self.assertIn('- ' + mod.inert(f'{hostile}:1'), body)
         self.assertEqual(mod.parse_block(body)['candidates'], [[hostile, 1, 'x == "1"']])
 
+    def test_a_backtick_led_path_cannot_escape_its_span(self):
+        # A path STARTING with a backtick would merge with the opening fence
+        # into a run nothing closes; the span pads one space each side so
+        # CommonMark strips them and the text stays inert. Verified against
+        # `gh api markdown -f mode=gfm`: the unpadded form renders a live
+        # user-mention link, the padded form renders <code> and no link.
+        hostile = '` @octocat x/tests/test_a.py'
+        body, _ = mod.status_body(SHA, [(hostile, 1, 'x == "1"')])
+        self.assertEqual(mod.inert(f'{hostile}:1'), '`` ` @octocat x/tests/test_a.py:1 ``')
+        self.assertIn('- ' + mod.inert(f'{hostile}:1'), body)
+        self.assertEqual(mod.parse_block(body)['candidates'], [[hostile, 1, 'x == "1"']])
+
     def test_a_clean_head_says_so(self):
         body, truncated = mod.status_body(SHA, [], clean=True)
         self.assertFalse(truncated)

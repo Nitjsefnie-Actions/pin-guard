@@ -331,6 +331,19 @@ class Action(unittest.TestCase):
         code, _ = self.action(gh, Screen(screen_run.ScreenOutcome('candidates', (hostile,), '')))
         self.assertEqual(code, 0)
 
+    def test_a_backtick_led_path_stays_inert_in_the_review_body(self):
+        # A path starting with a backtick would merge with the span's opening
+        # fence into a run nothing closes; inert pads one space each side so
+        # CommonMark strips them and the row renders as <code>, no mention.
+        hostile = ('` @octocat x/tests/test_a.py', 1, 'x == "1"')
+        body = f'{review_submit.MARKER}\n- {status_comment.inert("` @octocat x/tests/test_a.py:1")}'
+        gh = Gh(pr_head_call(), pr_head_call(), files_call(), pr_comments_call(), pr_reviews_call(),
+                review_post(payload({'event': 'COMMENT', 'commit_id': SHA, 'body': body,
+                                     'comments': []}), REVIEW_URL),
+                status_find_call(), status_post(status_body_check('1 candidate line(s)')))
+        code, _ = self.action(gh, Screen(screen_run.ScreenOutcome('candidates', (hostile,), '')))
+        self.assertEqual(code, 0)
+
     def test_a_prior_status_comment_is_edited_in_place_not_posted_again(self):
         earlier_body = status_comment.status_body('b' * 40, [('tests/old.py', 1, 'old == "1"')])[0]
         earlier = {'id': 7, 'user': {'login': status_comment.BOT_LOGIN, 'type': 'Bot'},

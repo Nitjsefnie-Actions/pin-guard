@@ -59,11 +59,14 @@ def inert(text):
 
     Inside a code span GitHub renders `@mentions`, `#N` references, `-->`
     and raw HTML literally, so a filename or error line is safe to show;
-    the span's backtick run is one longer than the longest run in the text.
+    the span's backtick run is one longer than the longest run in the text,
+    and one space pads each side — a text that STARTS with a backtick would
+    otherwise merge with the opening fence into a run nothing closes, while
+    CommonMark strips the padding spaces.
     """
     longest = max((len(run) for run in re.findall(r'`+', text)), default=0)
     fence = '`' * max(longest + 1, 1)
-    return f'{fence}{text}{fence}'
+    return f'{fence} {text} {fence}'
 
 
 def inert_block(text):
