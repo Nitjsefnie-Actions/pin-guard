@@ -132,8 +132,9 @@ def main():
                 deliver(repo, pr, head_sha, candidates)
             except Exception as delivery:  # stated in the status comment, never silent
                 reason = str(delivery)
-                if getattr(delivery, 'stderr', None):
-                    reason += f': {delivery.stderr.strip()}'
+                stderr = getattr(delivery, 'stderr', None)
+                if stderr:
+                    reason += f': {stderr.strip()}'
                 error = f'the review could not be posted: {reason}'
         if outcome.status == 'could-not-screen':
             screen_failure = (f'{len(outcome.unscreened)} file(s) could not be screened: '
