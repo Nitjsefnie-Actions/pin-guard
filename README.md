@@ -41,10 +41,12 @@ jobs:
 
 The `with:` block shows **every input with its default**. Omit it and a bare
 `uses:` step behaves the same. `github-token` is the token for the API reads
-and the comment writes; keep it at the default `github.token` — the action
-finds its own earlier comments as `github-actions[bot]`, the login that
-default token posts as, and a PAT or App token would break that recognition
-and post a fresh status comment on every head.
+and the comment writes. The action reads which login the token posts as and
+recognizes its own earlier comments by that login, so the token needs only
+the workflow's `pull-requests: write` permission: the default `github.token`
+posts as `github-actions[bot]`, and a PAT or App token posts as its own
+identity just as well — no fresh status comment on every head, whichever
+token runs.
 
 The `permissions:` block is least-privilege: `contents: read` reads the pull
 request's files at the head, and `pull-requests: write` posts the review and
@@ -134,10 +136,10 @@ rendered error text cannot fool a reader of the last block. This
 repository only writes the block; reading it before a merge is the
 reader's job.
 
-Trust only the status comment whose author is `github-actions[bot]` — the
-action recognizes its own comments only among bot-authored comments carrying
-the marker on a line of its own — and whose `head_sha` equals the head being
-merged.
+Trust only the status comment whose author is the login the workflow's
+configured `github-token` posts as — the action recognizes its own comments
+only among comments authored by that login carrying the marker on a line of
+its own — and whose `head_sha` equals the head being merged.
 
 ## License
 

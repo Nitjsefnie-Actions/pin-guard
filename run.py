@@ -13,6 +13,8 @@ screen at the PR head through `screen_run`, and delivers the outcome:
     only candidates not already commented by the action at this head.
     The action never resolves or dismisses a thread itself.
 
+The action's identity is the login its configured token posts as.
+
 Exit code 0: a completed screen was delivered — clean, or candidates with
 `PIN_GUARD_FAIL_ON_CANDIDATES` off. Exit code 1: candidates with it on, a
 screen that could not run, a truncated status comment, or any
@@ -29,7 +31,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent / 'scripts' / 'ci'))
 
 from review_submit import MARKER, current_bot_comments, plan_comments, submit_review
 from screen_run import ScreenOutcome, run_screen
-from status_comment import BOT_LOGIN, inert, upsert_status
+from status_comment import inert, upsert_status
 
 _HUNK = re.compile(r'^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@')
 
@@ -73,7 +75,7 @@ def diffable_lines(repo, pr):
     return diffable
 
 
-def deliver(repo, pr, head_sha, candidates):
+def deliver(repo, pr, head_sha, candidates, bot_login):
     """Comment the head's candidates: inline on the diff, the rest in the review body.
 
     The review body carries MARKER on its own line: current_bot_comments
@@ -81,12 +83,12 @@ def deliver(repo, pr, head_sha, candidates):
     whose body does, so a markerless body would re-comment every candidate
     on every later head.
     """
-    existing = current_bot_comments(gh, repo, pr, head_sha, BOT_LOGIN)
+    existing = current_bot_comments(gh, repo, pr, head_sha, bot_login)
     inline, body_only = plan_comments(candidates, existing, diffable_lines(repo, pr))
     if not inline and not body_only:
         return
     body = '\n'.join([MARKER, *(f'- {inert(f"{path}:{line}")}' for path, line, _ in body_only)])
-    submit_review(gh, repo, pr, head_sha, body, inline, BOT_LOGIN)
+    submit_review(gh, repo, pr, head_sha, body, inline, bot_login)
 
 
 def main():
@@ -105,6 +107,14 @@ def main():
     token = os.environ.get('PIN_GUARD_GITHUB_TOKEN', '')
     head_sha = os.environ.get('PIN_GUARD_HEAD_SHA', '')
     fail_on = os.environ.get('PIN_GUARD_FAIL_ON_CANDIDATES', '') == 'true'
+
+    # The login the token posts as.
+    try:
+        login = json.loads(gh('api', 'user'))['login']
+    except Exception as probe:
+        print(f'pin-guard: the token could not be identified ({probe}); no screen ran '
+              'and no comment was read or posted.', file=sys.stderr)
+        return 1
 
     # The screen reads the PR at its CURRENT head through the API, while the
     # event's SHA labels the review and the status: screen only when they are
@@ -143,7 +153,7 @@ def main():
         candidates = outcome.candidates
         if candidates:
             try:
-                deliver(repo, pr, head_sha, candidates)
+                deliver(repo, pr, head_sha, candidates, login)
             except Exception as delivery:  # stated in the status comment, never silent
                 reason = str(delivery)
                 stderr = getattr(delivery, 'stderr', None)
@@ -159,7 +169,7 @@ def main():
         # Fail closed: an unknown status must never read as a clean screen.
         error = f'the screen reported an unknown status {outcome.status!r}'
 
-    _, _, truncated = upsert_status(gh, repo, pr, head_sha, candidates,
+    _, _, truncated = upsert_status(gh, repo, pr, head_sha, candidates, bot_login=login,
                                     clean=outcome.status == 'clean', error=error or None,
                                     outcome=outcome.status)
     if error or outcome.status == 'could-not-screen' or truncated:

@@ -10,12 +10,11 @@ first parameter — the only GitHub seam; tests inject a double that refuses
 any call it does not model and records the calls it does. `stdin` carries a
 write's JSON payload: a review body does not fit in an argument list.
 
-A review or comment is the action's own only when its author is the bot
-identity passed in — the login compared AND `user.type == 'Bot'` — and the
-review's body carries `MARKER` on a line of its own. Marker text anywhere
-else (inside quoted candidate text, mid-line) never matches. A comment is
-current when, besides that, its `commit_id` is the screened head and it
-replies to no other comment.
+A review or comment is the action's own only when its author is `bot_login`
+— the login the run's token posts as — and the review's body carries
+`MARKER` on a line of its own; marker text anywhere else never matches,
+and any other login is never the action's. A comment is current when its
+`commit_id` is the screened head and it replies to no other comment.
 
 Each inline comment the module writes ends with a hidden machine-readable
 field on a line of its own:
@@ -61,9 +60,8 @@ def _own_lines(body):
 
 
 def _own_author(node, bot_login):
-    """The author is the bot identity: the login AND GitHub's `Bot` type."""
-    user = node.get('user') or {}
-    return user.get('login') == bot_login and user.get('type') == 'Bot'
+    """The author is the login the run's token posts as, whatever `type` carries it."""
+    return (node.get('user') or {}).get('login') == bot_login
 
 
 def current_bot_comments(gh, repo, pr, head_sha, bot_login):
@@ -74,8 +72,8 @@ def current_bot_comments(gh, repo, pr, head_sha, bot_login):
     pages — a listing read whole), flattens the pages, and keeps the
     comments whose author is `bot_login` AND whose parent review
     — matched by `pull_request_review_id` — is itself the action's own
-    (bot author, `MARKER` on a line of its own), whose `commit_id` equals
-    `head_sha` and whose `in_reply_to_id` is null. Each returned dict is
+    (`bot_login` author, `MARKER` on a line of its own), whose `commit_id`
+    equals `head_sha` and whose `in_reply_to_id` is null. Each returned dict is
     the comment's API object plus `quoted_text`, the exact line text read
     from the hidden field `render_candidate` writes.
 
@@ -169,8 +167,8 @@ def submit_review(gh, repo, pr, head_sha, review_body, inline, bot_login):
     lands in some review, none silently dropped; a 422 on a single comment
     cannot split and is raised. Each accepted review's `html_url` is
     returned. `bot_login` names the identity the review posts as; owning
-    the posted review later is `current_bot_comments`' reading, not part of
-    the wire payload.
+    the posted review later is `current_bot_comments`' reading, which
+    matches the same login.
     """
     return _post_reviews(gh, repo, pr, head_sha, review_body, list(inline))
 
