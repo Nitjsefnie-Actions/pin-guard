@@ -3,7 +3,8 @@
 
     found = find_status(gh, repo, pr, bot_login)
     body, truncated = status_body(head_sha, candidates, clean=..., error=...)
-    posted, url, truncated = upsert_status(gh, repo, pr, head_sha, candidates, clean=..., error=...)
+    posted, url, truncated = upsert_status(gh, repo, pr, head_sha, candidates,
+                                           bot_login=..., clean=..., error=...)
 
 Every function takes a `gh` callable `gh(*args, stdin=None) -> str` as its
 first parameter — the only GitHub seam; tests inject a double that refuses
@@ -101,9 +102,9 @@ def find_status(gh, repo, pr, bot_login):
 def parse_block(body):
     """The hidden block's parsed JSON, read the way a consumer reads it.
 
-    This reader exists for this module's own round-trip tests (and any
-    in-repo use); consumers outside the repository are still told to read
-    the block themselves — this repository only writes it.
+    This reader exists for this module's own round-trip tests; consumers
+    outside the repository are still told to read the block themselves —
+    this repository only writes it.
 
     Finds the block after `STATUS_MARKER`'s line, parses the JSON — the
     `\\u003c`-style unicode escapes are plain JSON — and returns the dict:
