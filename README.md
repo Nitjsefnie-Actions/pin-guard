@@ -116,18 +116,23 @@ block:
       "candidates": [["tests/test_x.py", 12, "..."]], "reason": "..."} -->
 ```
 
-The block is JSON: every `<`, `>` and `-` is forced to its JSON unicode
-escape (`<`, `>`, `-`), so a parser reads it directly and a
-candidate's text can never close the comment or leak markup. The `status`
-field is `clean`, `candidates` or `could-not-screen`; a run that screened
-nothing never parses as clean. `reason` names why the head is not clean — a
-screen that could not run or a review that could not be delivered — and is
-absent on a clean head. The block always carries the full candidate list,
-even when GitHub's comment length limit cut the visible list to what fits
-with the omission count stated. When even the full hidden list cannot fit,
-the block instead carries `{"head_sha": ..., "status": ..., "count": N,
-"truncated": true}` with no `candidates` key. This repository only writes
-the block; reading it before a merge is the reader's job.
+The block is JSON: every `<`, `>` and `-` in it is written as its JSON
+unicode escape (`\u003c`, `\u003e`, `\u002d`), so a parser reads it
+directly and a candidate's text can never close the comment or leak
+markup. The `status` field is `clean`, `candidates` or
+`could-not-screen`; a run that screened nothing never parses as clean.
+`reason` names why the head is not clean — a screen that could not run or
+a review that could not be delivered — and is absent on a clean head. The
+block always carries the full candidate list, even when GitHub's comment
+length limit cut the visible list to what fits with the omission count
+stated. When even the full hidden list cannot fit, the block instead
+carries `{"head_sha": ..., "status": ..., "count": N, "truncated": true}`
+with no `candidates` key. A consumer reads the block after the LAST
+`<!-- pin-guard: status -->` marker line in the comment: the visible text
+above the marker is not machine-readable, and a planted marker line inside
+rendered error text cannot fool a reader of the last block. This
+repository only writes the block; reading it before a merge is the
+reader's job.
 
 Trust only the status comment whose author is `github-actions[bot]` — the
 action recognizes its own comments only among bot-authored comments carrying

@@ -23,7 +23,7 @@ block:
 The block always carries the FULL candidate list and the screen's outcome
 (`status`, with `reason` beside it whenever the head is not clean — a
 delivery failure names itself there). Every `<`, `>` and `-` in the block
-is forced to its JSON unicode escape (`<`, `>`, `-`), so
+is written as its JSON unicode escape (`\\u003c`, `\\u003e`, `\\u002d`), so
 the block is plain JSON a parser reads directly and can never close its
 own comment or leak markup; `parse_block` reads it back the way a consumer
 does. GitHub's comment limit is 65536 characters: when the body would
@@ -109,7 +109,7 @@ def parse_block(body):
     the block themselves — this repository only writes it.
 
     Finds the block after `STATUS_MARKER`'s line, parses the JSON — the
-    `<`-style unicode escapes are plain JSON — and returns the dict:
+    `\\u003c`-style unicode escapes are plain JSON — and returns the dict:
     `{"head_sha", "status", "count", "candidates", "reason"?}`, or with
     `"truncated": true` instead of `candidates` when the full list could
     not fit. Raises AssertionError when no block follows the marker line.
