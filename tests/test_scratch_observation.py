@@ -10,4 +10,4 @@ def test_checkout_is_pinned():
 
 def test_setup_python_is_pinned():
     text = Path(".github/workflows/actionlint.yml").read_text()
-    assert "actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97" in text
+    assert "actions/setup-python@e797f83b8e4e4a7f8e5d76a1b2c3d4e5f6071829" in text
