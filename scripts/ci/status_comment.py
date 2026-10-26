@@ -17,21 +17,26 @@ The rendered body ends with the marker line and a hidden machine-readable
 block:
 
     <!-- pin-guard: status -->
-    <!-- {"head_sha": ..., "count": N, "candidates": [[path, line, text], ...]} -->
+    <!-- {"head_sha": ..., "status": "clean" | "candidates" | "could-not-screen",
+          "count": N, "candidates": [[path, line, text], ...], "reason": ...} -->
 
-The block always carries the FULL candidate list, with every `&`, `<`, `>`
-and `-` escaped (`&amp;`, `&lt;`, `&gt;`, `&dash;`) so it can never close
-its own comment or leak markup; `parse_block` reads it back the way a
-consumer does. GitHub's comment limit is 65536 characters: when the body
-would exceed it, the visible list shows what fits followed by how many were
+The block always carries the FULL candidate list and the screen's outcome
+(`status`, with `reason` beside it whenever the head is not clean — a
+delivery failure names itself there). Every `<`, `>` and `-` in the block
+is forced to its JSON unicode escape (`<`, `>`, `-`), so
+the block is plain JSON a parser reads directly and can never close its
+own comment or leak markup; `parse_block` reads it back the way a consumer
+does. GitHub's comment limit is 65536 characters: when the body would
+exceed it, the visible list shows what fits followed by how many were
 omitted, the visible and hidden text still carry the full count, and the
 boolean result is True — the caller fails the job. If even the full hidden
-list cannot fit, the block carries `{"head_sha": ..., "count": N,
-"truncated": true}` (the head SHA stays in the block: a consumer matching
-the block's head against the head being merged needs it there too) and the
-boolean is True.
+list cannot fit, the block carries `{"head_sha": ..., "status": ...,
+"count": N, "truncated": true}` (the head SHA stays in the block: a
+consumer matching the block's head against the head being merged needs it
+there too) and the boolean is True.
 """
 import json
+import re
 
 STATUS_MARKER = '<!-- pin-guard: status -->'
 LIMIT = 65536
@@ -39,21 +44,36 @@ BOT_LOGIN = 'github-actions[bot]'
 _BLOCK_PREFIX = '<!-- '
 _BLOCK_SUFFIX = ' -->'
 
-_ESCAPE = (('&', '&amp;'), ('<', '&lt;'), ('>', '&gt;'), ('-', '&dash;'))
+_JSON_ESCAPES = (('<', '\\u003c'), ('>', '\\u003e'), ('-', '\\u002d'))
 
 
 def _escape(text):
-    """Escape a hidden block's markup: `&` first, so the rest is reversible."""
-    for char, entity in _ESCAPE:
-        text = text.replace(char, entity)
+    """The block's JSON with `<`, `>` and `-` forced to unicode escapes."""
+    for char, escape in _JSON_ESCAPES:
+        text = text.replace(char, escape)
     return text
 
 
-def _unescape(text):
-    """The exact inverse of `_escape`, applied in reverse order."""
-    for char, entity in reversed(_ESCAPE):
-        text = text.replace(entity, char)
-    return text
+def inert(text):
+    """The text in an inline code span no run of its own backticks can close.
+
+    Inside a code span GitHub renders `@mentions`, `#N` references, `-->`
+    and raw HTML literally, so a filename or error line is safe to show;
+    the span's backtick run is one longer than the longest run in the text.
+    """
+    longest = max((len(run) for run in re.findall(r'`+', text)), default=0)
+    fence = '`' * max(longest + 1, 1)
+    return f'{fence}{text}{fence}'
+
+
+def inert_block(text):
+    """The text in a fenced block sized so no line of the text can close it.
+
+    The same discipline as `inert`, for text that may hold newlines.
+    """
+    longest = max((len(run) for run in re.findall(r'`+', text)), default=0)
+    fence = '`' * max(longest + 1, 3)
+    return f'{fence}\n{text}\n{fence}'
 
 
 def _own_lines(body):
@@ -85,48 +105,58 @@ def parse_block(body):
     in-repo use); consumers outside the repository are still told to read
     the block themselves — this repository only writes it.
 
-    Finds the block after `STATUS_MARKER`'s line, unescapes it, parses the
-    JSON, and returns the dict — `{"head_sha", "count", "candidates"}`, or
-    `{"head_sha", "count", "truncated": True}` when the full list could not
-    fit. Raises AssertionError when no block follows the marker line.
+    Finds the block after `STATUS_MARKER`'s line, parses the JSON — the
+    `<`-style unicode escapes are plain JSON — and returns the dict:
+    `{"head_sha", "status", "count", "candidates", "reason"?}`, or with
+    `"truncated": true` instead of `candidates` when the full list could
+    not fit. Raises AssertionError when no block follows the marker line.
     """
     after = body.rpartition(f'\n{STATUS_MARKER}\n')[2]
     _, separator, tail = after.partition(_BLOCK_PREFIX)
     if not separator or not tail.endswith(_BLOCK_SUFFIX):
         raise AssertionError(f'no hidden block follows the status marker: {after!r}')
-    return json.loads(_unescape(tail[:-len(_BLOCK_SUFFIX)]))
+    return json.loads(tail[:-len(_BLOCK_SUFFIX)])
 
 
-def status_body(head_sha, candidates, *, clean=False, error=None):
+def status_body(head_sha, candidates, *, clean=False, error=None, outcome=None):
     """The rendered status comment: `(body, truncated)`.
 
     The visible part names the screened head SHA, the candidate count, and
-    each candidate as `path:line`; `clean=True` renders the clean sentence
-    instead of a list (a clean head has no candidates), and `error` renders
-    the could-not-run sentence. The hidden block always carries the FULL
-    candidate list. When the body would exceed `LIMIT`, the visible list is
-    cut to what fits with the omission count stated and the boolean is
-    True; when even the full hidden list cannot fit, the block states the
-    count and `truncated: true`.
+    each candidate as an inert `path:line`. A non-clean status renders the
+    candidate list in every case; `error` adds the could-not-run sentence
+    with its text held inert — the list is never dropped for it. The hidden
+    block always carries the FULL candidate list plus the screen's outcome
+    (the `status` field, with `reason` beside it whenever the head is not
+    clean); `outcome` names it explicitly — 'clean' | 'candidates' |
+    'could-not-screen' — and defaults to what `clean` and `error` imply.
+    When the body would exceed `LIMIT`, the visible list is cut to what
+    fits with the omission count stated and the boolean is True; when even
+    the full hidden list cannot fit, the block states the count and
+    `truncated: true`.
     """
     count = len(candidates)
+    if outcome is None:
+        outcome = 'clean' if clean else ('could-not-screen' if error is not None else 'candidates')
     rows = [[path, line, text] for path, line, text in candidates]
-    full = _escape(json.dumps({'head_sha': head_sha, 'count': count, 'candidates': rows},
-                              ensure_ascii=True))
-    short = _escape(json.dumps({'head_sha': head_sha, 'count': count, 'truncated': True},
-                               ensure_ascii=True))
+    block = {'head_sha': head_sha, 'status': outcome, 'count': count, 'candidates': rows}
+    if not clean and error is not None:
+        block['reason'] = error
+    full = _escape(json.dumps(block, ensure_ascii=True))
+    short = _escape(json.dumps({'head_sha': head_sha, 'status': outcome, 'count': count,
+                                'truncated': True}, ensure_ascii=True))
 
     def assemble(shown_count, hidden):
         lines = [f'Pin-test screen of head {head_sha}: {count} candidate line(s).']
         if clean:
             lines.append('This head is clean: no candidate test lines.')
-        elif error is not None:
-            lines.append(f'The screen could not run: {error}')
         else:
-            lines.extend(f'- {path}:{line}' for path, line, _ in rows[:shown_count])
+            lines.extend(f'- {inert(f"{path}:{line}")}' for path, line, _ in rows[:shown_count])
             omitted = count - shown_count
             if omitted:
                 lines.append(f'{omitted} more candidate line(s) omitted from this comment.')
+            if error is not None:
+                lines.append('The screen could not run:')
+                lines.append(inert_block(error))
         lines.extend((STATUS_MARKER, f'{_BLOCK_PREFIX}{hidden}{_BLOCK_SUFFIX}'))
         return '\n'.join(lines)
 
@@ -141,18 +171,20 @@ def status_body(head_sha, candidates, *, clean=False, error=None):
     return assemble(0, short), True
 
 
-def upsert_status(gh, repo, pr, head_sha, candidates, *, clean=False, error=None):
+def upsert_status(gh, repo, pr, head_sha, candidates, *, clean=False, error=None, outcome=None):
     """Post or edit the status comment; `(posted_or_edited, url, truncated)`.
 
     Finds the action's earlier status comment (`find_status` against
     `BOT_LOGIN`) and edits it in place, or creates one; a clean head with no
     earlier status comment posts nothing and returns `(False, '', False)`.
-    The truncated boolean is `status_body`'s.
+    `outcome` names the screen's outcome for the hidden block and defaults
+    to what `clean` and `error` imply. The truncated boolean is
+    `status_body`'s.
     """
     existing = find_status(gh, repo, pr, BOT_LOGIN)
     if clean and existing is None:
         return False, '', False
-    body, truncated = status_body(head_sha, candidates, clean=clean, error=error)
+    body, truncated = status_body(head_sha, candidates, clean=clean, error=error, outcome=outcome)
     if existing is not None:
         endpoint = f'repos/{repo}/issues/{pr}/comments/{existing["id"]}'
     else:

@@ -131,8 +131,8 @@ class StatusBody(unittest.TestCase):
         self.assertFalse(truncated)
         self.assertIn(f'head {SHA}', body)
         self.assertIn('2 candidate line(s)', body)
-        self.assertIn('- tests/x.py:7', body)
-        self.assertIn('- tests/y.py:3', body)
+        self.assertIn('- ' + mod.inert('tests/x.py:7'), body)
+        self.assertIn('- ' + mod.inert('tests/y.py:3'), body)
 
     def test_a_clean_head_says_so(self):
         body, truncated = mod.status_body(SHA, [], clean=True)
@@ -141,15 +141,40 @@ class StatusBody(unittest.TestCase):
         self.assertIn('This head is clean: no candidate test lines.', body)
 
     def test_a_failed_screen_says_so(self):
-        body, truncated = mod.status_body(SHA, [], error='the screen exceeded its 240s budget and was killed')
+        detail = 'the screen exceeded its 240s budget and was killed'
+        body, truncated = mod.status_body(SHA, [], error=detail)
         self.assertFalse(truncated)
-        self.assertIn('The screen could not run: the screen exceeded its 240s budget and was killed', body)
+        self.assertIn('The screen could not run:', body)
+        self.assertIn(detail, body)
+        self.assertEqual(mod.parse_block(body),
+                         {'head_sha': SHA, 'status': 'could-not-screen', 'count': 0,
+                          'candidates': [], 'reason': detail})
+
+    def test_the_clean_and_could_not_screen_blocks_differ(self):
+        # The block is the surface a consumer reads before a merge: a run
+        # that screened nothing must never parse as clean.
+        clean, _ = mod.status_body(SHA, [], clean=True)
+        failed, _ = mod.status_body(SHA, [], error='exit 1 with no candidate rows')
+        clean_block = mod.parse_block(clean)
+        failed_block = mod.parse_block(failed)
+        self.assertEqual(clean_block['status'], 'clean')
+        self.assertEqual(failed_block['status'], 'could-not-screen')
+        self.assertNotEqual(clean_block, failed_block)
+        self.assertEqual(failed_block['reason'], 'exit 1 with no candidate rows')
+
+    def test_a_delivery_failure_keeps_the_candidate_list(self):
+        # The delivery failure adds its own sentence; the path:line list of
+        # the screen's findings is still rendered above it.
+        body, _ = mod.status_body(SHA, [('tests/x.py', 7, 'x == "1"')],
+                                  error='the review could not be posted: gh: HTTP 502')
+        self.assertIn('- ' + mod.inert('tests/x.py:7'), body)
+        self.assertIn('the review could not be posted: gh: HTTP 502', body)
 
     def test_the_hidden_block_carries_the_full_candidate_list(self):
         candidates = [('tests/x.py', 7, 'x == "1"'), ('tests/y.py', 3, 'y == "2"')]
         body, _ = mod.status_body(SHA, candidates)
         parsed = mod.parse_block(body)
-        self.assertEqual(parsed, {'head_sha': SHA, 'count': 2, 'candidates': [
+        self.assertEqual(parsed, {'head_sha': SHA, 'status': 'candidates', 'count': 2, 'candidates': [
             ['tests/x.py', 7, 'x == "1"'], ['tests/y.py', 3, 'y == "2"']]})
 
     def test_the_hidden_block_is_escaped_against_its_own_markup(self):
@@ -160,13 +185,16 @@ class StatusBody(unittest.TestCase):
         hidden = block_of(body)
         # The escaped JSON can hold no '<', '>' or '-': the sequence '-->'
         # closes the block's own comment and appears nowhere else after the
-        # marker, and no markup can leak out of the block.
+        # marker, and no markup can leak out of the block. The escapes are
+        # plain JSON unicode escapes (<, >, -) a parser reads
+        # directly — no HTML entity survives.
         after_marker = body.rpartition(f'\n{mod.STATUS_MARKER}\n')[2]
         self.assertEqual(after_marker.count('-->'), 1)
         for char in '<>-':
             self.assertNotIn(char, hidden)
+        self.assertIn('\\u002d', hidden)
         # And the consumer's read of the block round-trips every row exactly.
-        self.assertEqual(mod.parse_block(body), {'head_sha': SHA, 'count': 2, 'candidates': [
+        self.assertEqual(mod.parse_block(body), {'head_sha': SHA, 'status': 'candidates', 'count': 2, 'candidates': [
             ['tests/<script>.py', 7, '--> <b>bold</b> &lt;verbatim&gt; x & y -1 --'],
             ['tests/y.py', 3, '```` nested ``` ticks ````']]})
 
