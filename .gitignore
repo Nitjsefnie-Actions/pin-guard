@@ -55,5 +55,6 @@ scripts/ci/*
 !scripts/ci/review_submit.py
 !scripts/ci/status_comment.py
 !scripts/ci/aggregate_gate.py
+!scripts/ci/pin_sources.py
 !pytest.ini
 !requirements-test.txt
