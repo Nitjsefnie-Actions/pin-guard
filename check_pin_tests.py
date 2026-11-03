@@ -20,7 +20,7 @@ the lines that follow, up to ten lines, extended through standalone string
 literals). A test file is screened against a pin
 source only when it reads that source: its text
 calls a reader (`open(`, `read_text(`, `readFileSync(`, `glob(` ...) and names
-the source. That one predicate serves every source. A test file whose code
+the source (or, for GitLab CI, a file it includes). That one predicate serves every source. A test file whose code
 loads this screen itself (`import check_pin_tests`, `from check_pin_tests
 import ...`, or `spec_from_file_location('check_pin_tests', <a path whose last
 component is check_pin_tests.py>)`; a comment, a string or a similarly named
@@ -98,10 +98,15 @@ names that source in a `/` join or a path or reader call (`open`, `Path`,
       requirements*.txt: the version of each `==` or `===` pin;
       package.json: the exact versions in dependencies, devDependencies,
         peerDependencies, optionalDependencies and engines, and packageManager's;
-      .tool-versions, .python-version, .nvmrc: each version they name.
+      .tool-versions, .python-version, .nvmrc: each version they name;
+      .gitlab-ci.yml|yaml at the root and each file its local `include:`
+        pulls in (`*`/`**` too): each `image:`/`services:` reference by the
+        FROM rules (one holding `$` pins nothing) and the workflow installer
+        versions; quoted keys and `<<:` merges are not followed.
     A literal is matched whole (1.2.3 is not held by 11.2.3, 1.2.34 or 1.2.3.4;
     a `v` before it is allowed). Pins are read from those files at the PR head
-    and from the diff itself (a package.json hunk only when it parses whole).
+    and from the diff itself (a package.json hunk only when it parses whole; a
+    GitLab CI include only at the head).
 
 It misses every pin it cannot read as a literal from a source it reads: a value
 built at runtime or split across statements beyond its local assignment tracking
@@ -136,7 +141,7 @@ import warnings
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), 'scripts', 'ci'))
 
-from pin_sources import CannotScreen, dockerfile_pins, manifest_pins, source_kind  # pylint: disable=unused-import
+from pin_sources import CannotScreen, dockerfile_pins, gitlab_ci, manifest_pins, source_kind  # pylint: disable=unused-import
 
 
 def _parse(text):
@@ -174,6 +179,7 @@ _SOURCES = {  # what a test file names when it reads each pin source
     '.tool-versions': re.compile(r'\.tool-versions'),
     '.python-version': re.compile(r'\.python-version'),
     '.nvmrc': re.compile(r'\.nvmrc'),
+    'gitlab-ci': re.compile(r'\.gitlab-ci\.ya?ml'),
 }
 _STRING = re.compile(r'''"(?:\\.|[^"\\\n])*"|'(?:\\.|[^'\\\n])*'|`(?:\\.|[^`\\])*`''')
 _COMMENT = re.compile(r'\s*(?:#|//|/\*|\*)')
@@ -1073,12 +1079,12 @@ def _names_source_in_code(tree, kind):
     return False
 
 
-def couples(text, kind):
-    """Whether a test file's text reads the pin source `kind`: the one coupling predicate."""
+def couples(text, kind, also=()):
+    """Whether a test file's text reads the pin source `kind` (or a path in `also`): the one coupling predicate."""
     if not _READS.search(text):
         return False
-    tree = None
-    if 'check_pin_tests' in text or not _SOURCES[kind].search(text) and kind in ('workflow', 'pin-shape'):
+    tree, named = None, _SOURCES[kind].search(text) or any(path in text for path in also)
+    if 'check_pin_tests' in text or not named and kind in ('workflow', 'pin-shape'):
         try:
             tree = _parse(text)
         except SyntaxError:
@@ -1086,7 +1092,7 @@ def couples(text, kind):
     # The screen's own suite: its fixture text is input to the screen, not a reading of the repository.
     if tree is not None and _loads_screen(tree) and not _names_source_in_code(tree, kind):
         return False
-    if _SOURCES[kind].search(text):
+    if named:
         return True
     if tree is None or kind not in ('workflow', 'pin-shape'):
         return False
@@ -1180,21 +1186,20 @@ def _gh(*args):
 
 
 def head_sources(repo, sha, unscreened):
-    """(SHAs the workflows pin, {source kind: pinned literals}) from every pin source in the head's tree.
+    """(SHAs the workflows pin, {source kind: pinned literals}, GitLab CI includes) from the head's tree.
 
-    A tree GitHub truncated, or a source it cannot fetch or parse, is named on
+    A tree GitHub truncated, or a source it cannot fetch, parse or find, is named on
     stderr and appended to unscreened."""
     tree = json.loads(_gh('api', f'repos/{repo}/git/trees/{sha}?recursive=1'))
     if tree.get('truncated'):
         _cannot_screen(unscreened, f'the tree at {sha}', 'GitHub truncated the recursive listing')
-    pins, held = set(), {}
-    for entry in tree.get('tree', []):
-        path = entry.get('path', '')
-        kind = source_kind(path) if entry.get('type') == 'blob' else None
-        if not kind:
-            continue
+    pins, held, included = set(), {}, []
+    blobs = {e.get('path', ''): e['sha'] for e in tree.get('tree', []) if e.get('type') == 'blob'}
+    queue = [(path, source_kind(path)) for path in blobs if source_kind(path)]
+    while queue:
+        path, kind = queue.pop(0)
         try:
-            blob = json.loads(_gh('api', f'repos/{repo}/git/blobs/{entry["sha"]}'))
+            blob = json.loads(_gh('api', f'repos/{repo}/git/blobs/{blobs[path]}'))
             text = base64.b64decode(blob['content']).decode('utf-8', 'replace')
             held.setdefault(kind, set()).update(manifest_pins(kind, text))
         except subprocess.CalledProcessError as exc:
@@ -1205,7 +1210,15 @@ def head_sources(repo, sha, unscreened):
             continue
         if kind == 'workflow':
             pins.update(_ACTION_PIN.findall(text))
-    return pins, held
+        for pattern in gitlab_ci(text)[1] if kind == 'gitlab-ci' else ():
+            glob = re.compile(re.escape(pattern).replace(r'\*\*', '.*').replace(r'\*', '[^/]*'))
+            found = [p for p in blobs if glob.fullmatch(p)]
+            if not found:
+                _cannot_screen(unscreened, pattern, f'included by {path}, not in the tree')
+            new = [p for p in found if p not in included and source_kind(p) != 'gitlab-ci']
+            included += new
+            queue += [(p, 'gitlab-ci') for p in new]
+    return pins, held, included
 
 
 def _cannot_screen(unscreened, what, why):
@@ -1230,7 +1243,7 @@ def _screen(args):
     try:
         head = json.loads(_gh('pr', 'view', str(args.pr), '-R', args.repo, '--json', 'headRefOid'))['headRefOid']
         diff_text = _gh('pr', 'diff', str(args.pr), '-R', args.repo)
-        pins, held = head_sources(args.repo, head, unscreened)
+        pins, held, included = head_sources(args.repo, head, unscreened)
     except (subprocess.CalledProcessError, KeyError, ValueError) as exc:
         detail = getattr(exc, 'stderr', '') or str(exc)
         print(f'check_pin_tests: cannot read {args.repo} PR {args.pr}: {detail.strip()}', file=sys.stderr)
@@ -1245,7 +1258,7 @@ def _screen(args):
             except subprocess.CalledProcessError as exc:
                 cache[path] = None
                 _cannot_screen(unscreened, path, (exc.stderr or str(exc)).strip())
-        return cache[path] is not None and couples(cache[path], kind)
+        return cache[path] is not None and couples(cache[path], kind, included if kind == 'gitlab-ci' else ())
 
     context = []
     for path in dict.fromkeys(p for p, _, k, _ in _lines(diff_text) if k == '+' and is_test_file(p)):

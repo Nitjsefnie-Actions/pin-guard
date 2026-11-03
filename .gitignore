@@ -47,6 +47,7 @@ tests/*
 !tests/test_review_submit.py
 !tests/test_status_comment.py
 !tests/test_action.py
+!tests/test_gitlab_ci.py
 !scripts/
 scripts/*
 !scripts/ci/
