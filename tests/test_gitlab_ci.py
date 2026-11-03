@@ -85,7 +85,10 @@ class GitlabCiPins(unittest.TestCase):
                  'image: &base\n  name: python:3.11\n': {'python:3.11', '3.11'},
                  'image:\n  name: node:20.1\n  entrypoint:\n  - "x:9.9"\n': {'node:20.1', '20.1'},
                  'services:\n  - name: redis:7.2\n    variables:\n      name: x:9.9\n': {'redis:7.2', '7.2'},
-                 'services:\n  - command: |\n      run x:9.9\n    name: redis:7.2\n': {'redis:7.2', '7.2'}}
+                 'services:\n  - command: |\n      run x:9.9\n    name: redis:7.2\n': {'redis:7.2', '7.2'},
+                 'services:\n  -   name: a:1.0\n  - name: b:2.0\n  -\n      name: c:3.0\n':
+                     {'a:1.0', '1.0', 'b:2.0', '2.0', 'c:3.0', '3.0'},
+                 '"image": python:3.11\nservices: [{"name": redis:7.2}]\n': {'python:3.11', '3.11', 'redis:7.2', '7.2'}}
         for text, pins in table.items():
             with self.subTest(text=text):
                 self.assertEqual(mod.manifest_pins('gitlab-ci', text), pins)
@@ -98,12 +101,13 @@ class GitlabCiPins(unittest.TestCase):
         self.assertEqual(mod.gitlab_ci("include: ['c.yml', {remote: 'https://x/d.yml'}]\n")[1], ['c.yml'])
         for text in ("include: [{project: 'g/x', file: 'e.yml'}]\n", "include: [{project: 'g/x', file: ['e.yml']}]\n",
                      "include:\n  - local: 'ci/$CI_COMMIT_REF_NAME.yml'\n", 'include: *shared\n',
-                     'gen:\n  script: |\n    include: child.yml\n'):
+                     'gen:\n  script: |\n    include: child.yml\n', 'include: >-\n  ci/a.yml\n'):
             with self.subTest(text=text):
                 self.assertEqual(mod.gitlab_ci(text)[1], [])
         self.assertEqual(mod.gitlab_ci("include: [{local: f.yml, rules: [{if: '$X'}]}]\n")[1], ['f.yml'])
         self.assertEqual(mod.gitlab_ci('include:\n  - local: a.yml\n    inputs:\n      local: b.yml\n')[1], ['a.yml'])
         self.assertEqual(mod.gitlab_ci("include: ['ci/a,b.yml', \"c.yml\"]\n")[1], ['ci/a,b.yml', 'c.yml'])
+        self.assertEqual(mod.gitlab_ci('include:\n  - "local": d.yml\n  - {\'local\': e.yml}\n')[1], ['d.yml', 'e.yml'])
 
 
 class GitlabCiFindings(unittest.TestCase):
@@ -134,12 +138,19 @@ class GitlabCiFindings(unittest.TestCase):
         found = mod.findings(text, (), None, None, lambda path, kind: kind == 'gitlab-ci')
         self.assertEqual(found, [])
 
+    def test_hunks_of_other_sources_are_still_read_whole(self):
+        test = ("PKG = Path('package.json').read_text()", "assert '1.2.3' in PKG")
+        text = base.diff('package.json', '{"dependencies": {"a": "1.2.3"}}') + base.diff('tests/test_pkg.py', *test)
+        found = mod.findings(text, (), None, None, lambda path, kind: mod.couples('\n'.join(test), kind))
+        self.assertEqual([(p, n) for p, n, _ in found], [('tests/test_pkg.py', 2)])
+
     def test_couples_reads_the_gitlab_ci_file_by_name(self):
         self.assertTrue(mod.couples("Path('.gitlab-ci.yaml').read_text()", 'gitlab-ci'))
         self.assertFalse(mod.couples("NAME = '.gitlab-ci.yml'", 'gitlab-ci'))
         self.assertTrue(mod.couples("open('ci/jobs.yml').read()", 'gitlab-ci', ('ci/jobs.yml',)))
         self.assertFalse(mod.couples("open('ci/other.yml').read()", 'gitlab-ci', ('ci/jobs.yml',)))
         self.assertFalse(mod.couples("open('data.yml').read()", 'gitlab-ci', ('a.yml',)))
+        self.assertFalse(mod.couples("open('a.yml.bak').read()", 'gitlab-ci', ('a.yml',)))
 
 
 class GitlabCiMain(unittest.TestCase):
@@ -188,8 +199,11 @@ class GitlabCiMain(unittest.TestCase):
                                         {'tests/test_ci.py': "CI = Path('.gitlab-ci.yml').read_text()\n"})
         self.assertEqual((code, out), (1, ["tests/test_ci.py:1: assert 'redis:7.2' in CI"]))
 
-    def test_an_include_with_too_many_wildcards_is_named_not_matched(self):
-        code, out, err, _ = self.run_main(base.diff('tests/test_x.py', 'x = 1'),
-                                          {'.gitlab-ci.yml': "include: '*a*b*c*d*e.yml'\n"}, {'tests/test_x.py': 'x = 1\n'})
-        self.assertEqual((code, out), (2, []))
-        self.assertEqual(err[0], 'could not screen *a*b*c*d*e.yml: included by .gitlab-ci.yml, with more than 4 wildcards')
+    def test_three_wildcards_are_matched_and_a_fourth_is_named(self):
+        named = 'could not screen **/a*b*c*.yml: included by .gitlab-ci.yml, with more than 3 wildcards'
+        for root, code, err in (("include: '**/a*b*.yml'\n", 1, []), ("include: '**/a*b*c*.yml'\n", 2, [named])):
+            with self.subTest(root=root):
+                got = self.run_main(base.diff('tests/test_ci.py', "assert 'redis:7.2' in CI"),
+                                    {'.gitlab-ci.yml': root, 'ci/abc.yml': 'image: redis:7.2\n'},
+                                    {'tests/test_ci.py': "CI = Path('.gitlab-ci.yml').read_text()\n"})
+                self.assertEqual((got[0], [e for e in got[2] if e.startswith('could not')]), (code, err))

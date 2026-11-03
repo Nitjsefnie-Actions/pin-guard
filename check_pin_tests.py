@@ -20,7 +20,7 @@ the lines that follow, up to ten lines, extended through standalone string
 literals). A test file is screened against a pin
 source only when it reads that source: its text
 calls a reader (`open(`, `read_text(`, `readFileSync(`, `glob(` ...) and names
-the source (or, for GitLab CI, a file it includes). That one predicate serves every source. A test file whose code
+the source (or a file GitLab CI includes). That one predicate serves every source. A test file whose code
 loads this screen itself (`import check_pin_tests`, `from check_pin_tests
 import ...`, or `spec_from_file_location('check_pin_tests', <a path whose last
 component is check_pin_tests.py>)`; a comment, a string or a similarly named
@@ -100,13 +100,16 @@ names that source in a `/` join or a path or reader call (`open`, `Path`,
         peerDependencies, optionalDependencies and engines, and packageManager's;
       .tool-versions, .python-version, .nvmrc: each version they name;
       .gitlab-ci.yml|yaml at the root and each file its local `include:`
-        pulls in (`*`/`**` too): each `image:`/`services:` reference by the
-        FROM rules (one holding `$` pins nothing) and the workflow installer
-        versions; quoted keys and `<<:` merges are not followed.
+        pulls in (GitLab's `*`, `**`, `**/`; at most 3): each
+        `image:`/`services:` reference by the FROM rules and the workflow
+        installer versions. A line reader, not YAML: it misses a `$` variable
+        in a reference or include, an alias, a block-scalar or multi-line flow
+        value, a `<<:` merge, a flow value's anchors and escaped quotes, and a
+        flow `trigger:`.
     A literal is matched whole (1.2.3 is not held by 11.2.3, 1.2.34 or 1.2.3.4;
     a `v` before it is allowed). Pins are read from those files at the PR head
-    and from the diff itself (a package.json hunk only when it parses whole; a
-    GitLab CI include only at the head).
+    and from the diff itself (a package.json hunk only when it parses whole; a GitLab
+    CI include only at the head).
 
 It misses every pin it cannot read as a literal from a source it reads: a value
 built at runtime or split across statements beyond its local assignment tracking
@@ -1079,12 +1082,12 @@ def _names_source_in_code(tree, kind):
     return False
 
 
-def couples(text, kind, also=()):
-    """Whether a test file's text reads the pin source `kind` (or a path in `also`): the one coupling predicate."""
+def couples(text, kind, included=()):
+    """Whether a test file's text reads the pin source `kind`: the one coupling predicate."""
     if not _READS.search(text):
         return False
     tree = None
-    named = _SOURCES[kind].search(text) or any(re.search(rf'(?<![\w.-]){re.escape(p)}(?![\w.-])', text) for p in also)
+    named = _SOURCES[kind].search(text) or any(re.search(rf'(?<![\w.-]){re.escape(p)}(?![\w.-])', text) for p in included)
     if 'check_pin_tests' in text or not named and kind in ('workflow', 'pin-shape'):
         try:
             tree = _parse(text)
@@ -1212,9 +1215,9 @@ def head_sources(repo, sha, unscreened):
         if kind == 'workflow':
             pins.update(_ACTION_PIN.findall(text))
         for pattern in gitlab_ci(text)[1] if kind == 'gitlab-ci' else ():
-            parts = re.split(r'(\*\*/|\*+)', pattern)  # GitLab's wildcards: `**/` also matches no directory
-            if sum('*' in part for part in parts) > 4:  # each wildcard multiplies what a path can cost to match
-                _cannot_screen(unscreened, pattern, f'included by {path}, with more than 4 wildcards')
+            parts = re.split(r'(\*\*/|\*+)', pattern)
+            if sum('*' in part for part in parts) > 3:
+                _cannot_screen(unscreened, pattern, f'included by {path}, with more than 3 wildcards')
                 continue
             glob = re.compile(''.join({'**/': '(?:.*/)?', '*': '[^/]*'}.get(part, '.*' if '*' in part else re.escape(part))
                                       for part in parts))

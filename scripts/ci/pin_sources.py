@@ -9,7 +9,7 @@ _DEP_KEYS = ('dependencies', 'devDependencies', 'peerDependencies', 'optionalDep
 _EXACT = re.compile(r'[v=]?(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?)')
 _PIP_PIN = re.compile(r'''(?<![\w.-])[A-Za-z0-9][\w.-]*(?:\[[^\]]*\])?===?([^\s'"`;,)]+)''')
 _NPM_PIN = re.compile(r'(?<![\w@/.-])@?[\w.-]+(?:/[\w.-]+)?@(\d+\.\d+[\w.+-]*)')
-_YAML_LINE = re.compile(r'(\s*)(-\s+)?(?:([\w-]+):(?:\s+|$))?(.*)')
+_YAML_LINE = re.compile(r'''(\s*)(-(?:\s+|$))?(?:(["']?)([\w-]+)\3:(?:\s+|$))?(.*)''')
 _ITEM_KEY = {'image': 'name', 'services': 'name', 'include': 'local'}
 
 
@@ -63,9 +63,9 @@ def _flow_items(text):
 
 def _scalars(value, key):
     """A value's plain scalars: itself, a flow sequence's items, a flow mapping's `key:` value."""
-    pair = re.fullmatch(r'([\w-]+):\s+(.*)', value, re.S)
+    pair = re.fullmatch(r'''(["']?)([\w-]+)\1:\s+(.*)''', value, re.S)
     if pair:
-        return _scalars(pair.group(2), '') if pair.group(1) == key else []
+        return _scalars(pair.group(3), '') if pair.group(2) == key else []
     if value[:1] in ('[', '{'):
         return [s for item in _flow_items(value) for s in _scalars(item, key)]
     return [value.strip('"\'')] if value and value[0] not in '*|>' else []
@@ -79,7 +79,7 @@ def gitlab_ci(text):
         line = re.sub(r'(^|\s)#.*', '', raw).rstrip()
         m = _YAML_LINE.match(line)
         assert m is not None
-        indent, dash, key, value = m.groups()
+        indent, dash, _, key, value = m.groups()
         at, value = len(indent), re.sub(r'^&\S+\s*', '', value)
         if not line.strip() or 0 <= scalar < at:
             continue
@@ -87,8 +87,10 @@ def gitlab_ci(text):
         if block and (at > block[0] or at == block[0] and dash):
             if dash and block[2] < 0:
                 block[2] = at
-            if key and block[3] < 0:
-                block[3] = at + len(dash or '')
+            if dash and at == block[2]:  # a new item
+                block[3] = at + len(dash) if key else -1
+            elif key and block[3] < 0:
+                block[3] = at
             if (key == _ITEM_KEY[block[1]] and at + len(dash or '') == block[3]
                     or dash and not key and at == block[2] and block[1] != 'image'):
                 found[block[1]] += _scalars(value, _ITEM_KEY[block[1]])
