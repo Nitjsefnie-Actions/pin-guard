@@ -88,7 +88,8 @@ class GitlabCiPins(unittest.TestCase):
                  'services:\n  - command: |\n      run x:9.9\n    name: redis:7.2\n': {'redis:7.2', '7.2'},
                  'services:\n  -   name: a:1.0\n  - name: b:2.0\n  -\n      name: c:3.0\n':
                      {'a:1.0', '1.0', 'b:2.0', '2.0', 'c:3.0', '3.0'},
-                 '"image": python:3.11\nservices: [{"name": redis:7.2}]\n': {'python:3.11', '3.11', 'redis:7.2', '7.2'}}
+                 '"image": python:3.11\nservices: [{"name": redis:7.2}]\n': {'python:3.11', '3.11', 'redis:7.2', '7.2'},
+                 'image:\n  entrypoint:\n    - name: x:9.9\n  name: node:20.1\n': {'node:20.1', '20.1'}}
         for text, pins in table.items():
             with self.subTest(text=text):
                 self.assertEqual(mod.manifest_pins('gitlab-ci', text), pins)
@@ -108,6 +109,8 @@ class GitlabCiPins(unittest.TestCase):
         self.assertEqual(mod.gitlab_ci('include:\n  - local: a.yml\n    inputs:\n      local: b.yml\n')[1], ['a.yml'])
         self.assertEqual(mod.gitlab_ci("include: ['ci/a,b.yml', \"c.yml\"]\n")[1], ['ci/a,b.yml', 'c.yml'])
         self.assertEqual(mod.gitlab_ci('include:\n  - "local": d.yml\n  - {\'local\': e.yml}\n')[1], ['d.yml', 'e.yml'])
+        self.assertEqual(mod.gitlab_ci('include:\n  rules:\n    - if: $X\n  local: f.yml\n')[1], ['f.yml'])
+        self.assertEqual(mod.gitlab_ci('include: [&inc g.yml]\n')[1], ['g.yml'])
 
 
 class GitlabCiFindings(unittest.TestCase):

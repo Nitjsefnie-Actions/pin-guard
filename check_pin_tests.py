@@ -100,12 +100,12 @@ names that source in a `/` join or a path or reader call (`open`, `Path`,
         peerDependencies, optionalDependencies and engines, and packageManager's;
       .tool-versions, .python-version, .nvmrc: each version they name;
       .gitlab-ci.yml|yaml at the root and each file its local `include:`
-        pulls in (GitLab's `*`, `**`, `**/`; at most 3): each
+        pulls in (GitLab's `*`, `**`, `**/`; over 3 are named): each
         `image:`/`services:` reference by the FROM rules and the workflow
-        installer versions. A line reader, not YAML: it misses a `$` variable
-        in a reference or include, an alias, a block-scalar or multi-line flow
-        value, a `<<:` merge, a flow value's anchors and escaped quotes, and a
-        flow `trigger:`.
+        installer versions. A line reader: it misses a `$` variable in a
+        reference or include, an alias, a block-scalar or multi-line flow
+        value, a `<<:` merge, a flow value with an apostrophe or escaped
+        quote, and a flow `trigger:`.
     A literal is matched whole (1.2.3 is not held by 11.2.3, 1.2.34 or 1.2.3.4;
     a `v` before it is allowed). Pins are read from those files at the PR head
     and from the diff itself (a package.json hunk only when it parses whole; a GitLab
