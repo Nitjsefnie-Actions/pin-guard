@@ -1083,7 +1083,8 @@ def couples(text, kind, also=()):
     """Whether a test file's text reads the pin source `kind` (or a path in `also`): the one coupling predicate."""
     if not _READS.search(text):
         return False
-    tree, named = None, _SOURCES[kind].search(text) or any(path in text for path in also)
+    tree = None
+    named = _SOURCES[kind].search(text) or any(re.search(rf'(?<![\w.-]){re.escape(p)}(?![\w.-])', text) for p in also)
     if 'check_pin_tests' in text or not named and kind in ('workflow', 'pin-shape'):
         try:
             tree = _parse(text)
@@ -1130,7 +1131,7 @@ def findings(diff_text, pinned=(), reads_workflows=None, literals=None, reads_so
             continue
         if path.startswith('.github/workflows/'):
             pins.update(_ACTION_PIN.findall(text))
-        texts.setdefault(path, []).append(text)
+        texts.setdefault(path, []).append('---' if kind == '@' and source_kind(path) == 'gitlab-ci' else text)
     for path, lines in texts.items():
         kind = source_kind(path)
         if kind:
@@ -1211,7 +1212,12 @@ def head_sources(repo, sha, unscreened):
         if kind == 'workflow':
             pins.update(_ACTION_PIN.findall(text))
         for pattern in gitlab_ci(text)[1] if kind == 'gitlab-ci' else ():
-            glob = re.compile(re.escape(pattern).replace(r'\*\*', '.*').replace(r'\*', '[^/]*'))
+            parts = re.split(r'(\*\*/|\*+)', pattern)  # GitLab's wildcards: `**/` also matches no directory
+            if sum('*' in part for part in parts) > 4:  # each wildcard multiplies what a path can cost to match
+                _cannot_screen(unscreened, pattern, f'included by {path}, with more than 4 wildcards')
+                continue
+            glob = re.compile(''.join({'**/': '(?:.*/)?', '*': '[^/]*'}.get(part, '.*' if '*' in part else re.escape(part))
+                                      for part in parts))
             found = [p for p in blobs if glob.fullmatch(p)]
             if not found:
                 _cannot_screen(unscreened, pattern, f'included by {path}, not in the tree')

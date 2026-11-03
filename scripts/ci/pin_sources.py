@@ -10,7 +10,6 @@ _EXACT = re.compile(r'[v=]?(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+
 _PIP_PIN = re.compile(r'''(?<![\w.-])[A-Za-z0-9][\w.-]*(?:\[[^\]]*\])?===?([^\s'"`;,)]+)''')
 _NPM_PIN = re.compile(r'(?<![\w@/.-])@?[\w.-]+(?:/[\w.-]+)?@(\d+\.\d+[\w.+-]*)')
 _YAML_LINE = re.compile(r'(\s*)(-\s+)?(?:([\w-]+):(?:\s+|$))?(.*)')
-_FLOW_ITEM = re.compile(r'''(?:^|[\[{,])\s*(?:([\w-]+):\s+)?["']?([^\s,\[\]{}"']+)''')
 _ITEM_KEY = {'image': 'name', 'services': 'name', 'include': 'local'}
 
 
@@ -48,36 +47,57 @@ def image_pins(ref):
     return pins
 
 
+def _flow_items(text):
+    """The top-level items of a flow collection, `[...]` or `{...}`."""
+    items, depth, quote, start = [], 0, '', 1
+    for i, ch in enumerate(text):
+        if quote or ch in '"\'':
+            quote = '' if ch == quote else quote or ch
+            continue
+        depth += (ch in '[{') - (ch in ']}')
+        if ch == ',' and depth == 1 or ch in ']}' and not depth:
+            items.append(text[start:i].strip())
+            start = i + 1
+    return [item for item in items if item]
+
+
 def _scalars(value, key):
-    """A value's scalars: itself, or a flow collection's plain and `key:` items."""
-    if value[:1] not in ('[', '{'):
-        return [value.strip('"\'')] if value else []
-    return [v for k, v in _FLOW_ITEM.findall(value) if k in ('', key)]
+    """A value's plain scalars: itself, a flow sequence's items, a flow mapping's `key:` value."""
+    pair = re.fullmatch(r'([\w-]+):\s+(.*)', value, re.S)
+    if pair:
+        return _scalars(pair.group(2), '') if pair.group(1) == key else []
+    if value[:1] in ('[', '{'):
+        return [s for item in _flow_items(value) for s in _scalars(item, key)]
+    return [value.strip('"\'')] if value and value[0] not in '*|>' else []
 
 
 def gitlab_ci(text):
     """(image references, local include patterns) a GitLab CI file names."""
     found = {key: [] for key in _ITEM_KEY}
-    block = []  # [key indent, key, item indent]
+    block, scalar = [], -1  # [indent, key, dash column, key column]; block scalar indent
     for raw in text.splitlines():
         line = re.sub(r'(^|\s)#.*', '', raw).rstrip()
         m = _YAML_LINE.match(line)
         assert m is not None
         indent, dash, key, value = m.groups()
-        at = len(indent)
-        if not line.strip():
+        at, value = len(indent), re.sub(r'^&\S+\s*', '', value)
+        if not line.strip() or 0 <= scalar < at:
             continue
+        scalar = at + len(dash or '') * bool(key) if re.fullmatch(r'[|>][-+0-9]*', value) else -1
         if block and (at > block[0] or at == block[0] and dash):
             if dash and block[2] < 0:
                 block[2] = at
-            if key == _ITEM_KEY[block[1]] or dash and not key and at == block[2]:
+            if key and block[3] < 0:
+                block[3] = at + len(dash or '')
+            if (key == _ITEM_KEY[block[1]] and at + len(dash or '') == block[3]
+                    or dash and not key and at == block[2] and block[1] != 'image'):
                 found[block[1]] += _scalars(value, _ITEM_KEY[block[1]])
             continue
-        block = [at, key, -1] if key in _ITEM_KEY and not value else []
+        block = [at, key, -1, -1] if key in _ITEM_KEY and not value else []
         if key in _ITEM_KEY:
             found[key] += _scalars(value, _ITEM_KEY[key])
     return ([r for r in found['image'] + found['services'] if '$' not in r],
-            [p.lstrip('/') for p in found['include'] if not re.match(r'\w+://', p)])
+            [p.lstrip('/') for p in found['include'] if '$' not in p and not re.match(r'\w+://', p)])
 
 
 def dockerfile_pins(text):
