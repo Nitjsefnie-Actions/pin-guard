@@ -63,6 +63,7 @@ def _flow_items(text):
 
 def _scalars(value, key):
     """A value's plain scalars: itself, a flow sequence's items, a flow mapping's `key:` value."""
+    value = re.sub(r'^&\S+\s+', '', value)
     pair = re.fullmatch(r'''(["']?)([\w-]+)\1:\s+(.*)''', value, re.S)
     if pair:
         return _scalars(pair.group(3), '') if pair.group(2) == key else []
@@ -85,7 +86,7 @@ def gitlab_ci(text):
             continue
         scalar = at + len(dash or '') * bool(key) if re.fullmatch(r'[|>][-+0-9]*', value) else -1
         if block and (at > block[0] or at == block[0] and dash):
-            if dash and block[2] < 0:
+            if dash and block[2] < 0 and block[3] < 0:
                 block[2] = at
             if dash and at == block[2]:  # a new item
                 block[3] = at + len(dash) if key else -1
