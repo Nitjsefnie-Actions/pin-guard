@@ -1,7 +1,7 @@
 name: ratchet push
 
 # The measuring job stays keyless: tests gates coverage and stages data only
-# when its floor rises. The deploy key lives in main-push and reaches only this
+# when its record tightens. The deploy key lives in main-push and reaches only this
 # separate, data-only job. Its token can list and download artifacts; SSH
 # authenticates the push through the default branch's protection. No fetched
 # tree is materialized: Git plumbing updates only data blobs, and validators
