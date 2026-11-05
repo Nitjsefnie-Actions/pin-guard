@@ -127,7 +127,7 @@ jobs:
           # One shared index preserves every update if a future run carries
           # several artifacts. No source is checked out by read-tree.
           git -C "$scratch" read-tree "$fetched"
-          message='Ratchet ci-thresholds: raise the coverage floor (automated)'
+          message='chore(ratchet): raise the coverage floor (automated)'
           if [ "$PIN_GUARD_RATCHET_SELECTED" = true ]; then
             if [ ! -s "$RUNNER_TEMP/ratchet-data/base.txt" ]; then
               echo "the ratchet data carried no base; the measuring job is broken" >&2
