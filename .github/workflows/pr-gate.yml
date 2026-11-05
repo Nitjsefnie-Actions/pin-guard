@@ -2,7 +2,7 @@ name: pr gate
 # pull_request_target: a fork's pull_request token is read-only, so its
 # comment would silently do nothing. The pinned action reads the template at
 # the PR's base SHA and runs no pull-request code. synchronize re-runs the
-# gate on every push, so its check attaches to each new head.
+# gate on every push.
 on: # zizmor: ignore[dangerous-triggers]
   pull_request_target:
     types: [opened, edited, reopened, synchronize, ready_for_review]
@@ -15,9 +15,8 @@ concurrency:
   cancel-in-progress: false
 jobs:
   gate:
-    # Bot-authored pull requests are not gated, and a draft is checked when
-    # it is marked ready for review. GitHub reports a skipped job's check as
-    # success, so neither blocks a merge.
+    # Bot-authored pull requests are not gated; a draft is gated once it is
+    # marked ready. GitHub counts a skipped job's check as success.
     if: >-
       github.event.pull_request.user.type != 'Bot'
       && github.event.pull_request.draft == false
