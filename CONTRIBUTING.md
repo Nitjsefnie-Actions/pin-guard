@@ -58,10 +58,12 @@ pycodestyle, pylint and pyright, and gates coverage on the floor recorded in
 coverage above the recorded measurement by more than the hysteresis in
 `.github/scripts/ratchet_thresholds.py`, the
 [ratchet push workflow](.github/workflows/ratchet-push.yml) raises that floor
-in an automated commit. The comment-share and size records
-(`.github/comment-share.json`, `.github/size-baseline.json`) ride the pull
-request that changes the tree: when a change tightens a record, commit the
-tightened entry with it.
+in an automated commit. The size records (`.github/size-baseline.json`)
+ride the pull request that changes the tree: when a change tightens a
+record, commit the tightened entry with it. The comment-share records
+(`.github/comment-share.json`) are tightened on each push to main by the
+[comment share workflow](.github/workflows/comment-share.yml), which
+commits any changed entry itself.
 
 ## Commit messages
 
