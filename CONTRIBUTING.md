@@ -54,11 +54,14 @@ python3 -m pytest tests/ -q --tb=short -ra
 
 The [tests workflow](.github/workflows/tests.yml) also runs Ruff,
 pycodestyle, pylint and pyright, and gates coverage on the floor recorded in
-`.github/ci-thresholds.json`. A push to main that measures higher coverage
-raises that floor in an automated commit; a pull request never edits it to
-pass. The comment-share and size records (`.github/comment-share.json`,
-`.github/size-baseline.json`) ride the pull request that changes the tree:
-their checks name each entry the change must carry.
+`.github/ci-thresholds.json`. When a green tests run on main measures
+coverage above the recorded measurement by more than the hysteresis in
+`.github/scripts/ratchet_thresholds.py`, the
+[ratchet push workflow](.github/workflows/ratchet-push.yml) raises that floor
+in an automated commit. The comment-share and size records
+(`.github/comment-share.json`, `.github/size-baseline.json`) ride the pull
+request that changes the tree: when a change tightens a record, commit the
+tightened entry with it.
 
 ## Commit messages
 
