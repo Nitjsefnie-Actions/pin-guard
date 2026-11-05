@@ -63,7 +63,8 @@ ride the pull request that changes the tree: when a change tightens a
 record, commit the tightened entry with it. The comment-share records
 (`.github/comment-share.json`) are tightened on each push to main by the
 [comment share workflow](.github/workflows/comment-share.yml), which
-commits any changed entry itself.
+commits any changed entry itself, or leaves it to the next push's run when
+main has moved past the push it measured.
 
 ## Commit messages
 
