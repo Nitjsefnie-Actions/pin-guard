@@ -90,7 +90,10 @@ its assignees.
 
 Keep changes small and single-purpose. Claim the issue first, name it in the
 pull request's Related Issues and Pull Requests section, and follow the
-[pull request template](.github/PULL_REQUEST_TEMPLATE.md). File a second
-defect separately rather than expanding the patch.
+[pull request template](.github/PULL_REQUEST_TEMPLATE.md). Author and commit
+with an email linked to your GitHub account: the pull request gate checks that
+every commit's author and committer resolve to you, or that the commit carries
+a `Co-Authored-By:` trailer whose email does. File a second defect separately
+rather than expanding the patch.
 
 Everyone taking part follows the [Code of Conduct](CODE_OF_CONDUCT.md).
