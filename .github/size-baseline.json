@@ -1,4 +1,7 @@
 {
+  "trees": {
+    "tests/": 3831
+  },
   "schema_version": 1,
   "baseline": {
     "check_pin_tests.py": 1305,
