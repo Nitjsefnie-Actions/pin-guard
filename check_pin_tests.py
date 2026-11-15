@@ -17,8 +17,7 @@ A test file is anything under a `tests`/`test`/`__tests__` directory or named
 `test_*`, `*_test.*`, `*.test.*` or `*.spec.*`. Its added lines are grouped into
 statements (an assertion or assignment's open brackets outside strings join
 the lines that follow, up to ten lines, extended through standalone string
-literals). A test file is screened against a pin
-source only when it reads that source: its text
+literals). A test file is screened against a pin source only when it reads that source: its text
 calls a reader (`open(`, `read_text(`, `readFileSync(`, `glob(` ...) and names
 the source (or a file GitLab CI includes). That one predicate serves every source. A test file whose code
 loads this screen itself (`import check_pin_tests`, `from check_pin_tests
@@ -35,7 +34,7 @@ names that source in a `/` join or a path or reader call (`open`, `Path`,
     from an input, and a string composed around an input compared with a value
     read from another step (`_step(...)["run"]`), a value derived by a call handed
     a workflow, action or Dockerfile path compared with an input, an input compared
-    with a value a call derives from a field of a different step
+    with a value a call or f-string derives from a field of a different step
     (`re.findall(..., stage["run"])[0]`, inline or through a bound name) whose step
     is read from the workflows (a `["steps"]` read off a call handed no literal,
     an index or `next(...)` selection from one, or a name already read from the
@@ -256,8 +255,7 @@ def _reads_source(call):
 def _derived(node, bindings):
     return any(isinstance(p, ast.Call) and isinstance(p.func, ast.Name)
                and p.func.id in ('_shipped_action_pin', 'shipped_pin')
-               or isinstance(p, ast.Call) and _reads_source(p)
-               or _field(p, bindings)
+               or isinstance(p, ast.Call) and _reads_source(p) or _field(p, bindings)
                or isinstance(p, ast.Call) and isinstance(p.func, ast.Attribute)
                and p.func.attr in ('read_text', 'read_bytes')
                or isinstance(p, ast.Name) and bindings.get(p.id) == 'derived'
@@ -275,9 +273,16 @@ def _root(node):
             return node.id if isinstance(node, ast.Name) else None
 
 
+def _workflow_read(node, bindings):
+    while isinstance(node, ast.Subscript):
+        node = node.value
+    return isinstance(node, ast.Name) and bindings.get(node.id) == 'workflow' or isinstance(node, ast.Call) and not any(
+        _literal(arg, bindings) or isinstance(arg, ast.Name) and bindings.get(arg.id) in ('literal', 'fixture') for arg in node.args)
+
+
 def _step_value(node, bindings):
     """Whether an expression is a workflow step, or a steps list, read from the parsed workflows: a
-    `["steps"]` read off a call handed no literal, or an index or `next(...)` selection from one."""
+    `["steps"]` read _workflow_read accepts, or an index or `next(...)` selection from one."""
     if isinstance(node, ast.Name):
         return bindings.get(node.id) == 'step'
     if (isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == 'next'
@@ -288,23 +293,18 @@ def _step_value(node, bindings):
     if not (isinstance(node.slice, ast.Constant) and node.slice.value == 'steps'):
         return not (isinstance(node.slice, ast.Constant) and isinstance(node.slice.value, str)) \
             and _step_value(node.value, bindings)
-    root = node.value
-    while isinstance(root, ast.Subscript):
-        root = root.value
-    return isinstance(root, ast.Call) and not any(
-        _literal(arg, bindings) or isinstance(arg, ast.Name) and bindings.get(arg.id) in ('literal', 'fixture')
-        for arg in root.args)
+    return _workflow_read(node.value, bindings)
 
 
 def _step_fields(node, bindings):
-    """The steps (names bound to a step or a value read from the workflows) whose field a call in the
-    expression is handed, directly or through a name bound to such a call's result."""
+    """The steps (names bound to a step or a value read from the workflows) whose field a call or f-string
+    in the expression reads, directly or through a bound name."""
     names = set()
     for p in ast.walk(node):
         if isinstance(p, ast.Name):
             names |= bindings.get(('step-fields', p.id), set())
-        if isinstance(p, ast.Call):
-            names.update(q.value.id for arg in p.args for q in ast.walk(arg)
+        if isinstance(p, (ast.Call, ast.FormattedValue)):
+            names.update(q.value.id for arg in (p.args if isinstance(p, ast.Call) else [p.value]) for q in ast.walk(arg)
                          if isinstance(q, ast.Subscript) and isinstance(q.slice, ast.Constant)
                          and isinstance(q.slice.value, str) and isinstance(q.value, ast.Name)
                          and bindings.get(q.value.id) in ('step', 'derived'))
@@ -319,8 +319,8 @@ def _literal(node, bindings):
         return all(_literal(child, bindings) for child in ast.iter_child_nodes(node)
                    if not isinstance(child, ast.expr_context))
     if isinstance(node, ast.JoinedStr):
-        return not any(_derived(value.value, bindings)
-                       for value in node.values if isinstance(value, ast.FormattedValue))
+        return not _step_fields(node, bindings) and not any(_derived(value.value, bindings)
+                                                            for value in node.values if isinstance(value, ast.FormattedValue))
     if isinstance(node, ast.BinOp):
         return _literal(node.left, bindings) and _literal(node.right, bindings)
     return False
@@ -806,7 +806,10 @@ def _python_assertion(text, bindings):
                     not _field(test, bindings) or isinstance(test, ast.UnaryOp) and isinstance(test.op, ast.Not)
                     and (isinstance(test.operand, (ast.ListComp, ast.GeneratorExp))
                          or isinstance(test.operand, ast.Call) and isinstance(test.operand.func, ast.Name)
-                         and test.operand.func.id == 'any')):
+                         and test.operand.func.id == 'any')
+                    or isinstance(test, ast.Call) and isinstance(test.func, ast.Name) and test.func.id == 'all' and test.args
+                    and isinstance(test.args[0], (ast.ListComp, ast.GeneratorExp)) and isinstance(test.args[0].elt, ast.Compare)
+                    and all(isinstance(op, (ast.NotEq, ast.NotIn, ast.IsNot)) for op in test.args[0].elt.ops)):
                 return False
             return None  # an unrecognized assertion still goes through the base text checks
         operands = [test.left, *test.comparators]
@@ -817,8 +820,7 @@ def _python_assertion(text, bindings):
         if not _VERSION_REF.search(text) and any(isinstance(op, (ast.NotIn, ast.IsNot)) for op in test.ops):
             return False
     elif (isinstance(statement, ast.Expr) and isinstance(statement.value, ast.Call)
-          and isinstance(statement.value.func, ast.Attribute)
-          and statement.value.func.attr.startswith('assert')):
+          and isinstance(statement.value.func, ast.Attribute) and statement.value.func.attr.startswith('assert')):
         call = statement.value
         func = call.func
         assert isinstance(func, ast.Attribute)
@@ -885,8 +887,7 @@ def _asserts_on_step(text, bindings):
         return True
     if not (_KEY.search(text) and _ASSERTION.search(text)):
         return False
-    if (_ABSENCE.search(text)
-            or re.search(r'\.some\(', text) and re.search(r'\.toBe\(false\)', text)
+    if (_ABSENCE.search(text) or re.search(r'\.some\(', text) and re.search(r'\.toBe\(false\)', text)
             and not _WITH_KEY.search(text) and r'actions\/checkout' in text):
         return False  # absence checks stay
     if len(_WITH_KEY.findall(text)) >= 2 or (_WITH_KEY.search(text) and _OTHER_STEP.search(text)):
@@ -951,8 +952,7 @@ def _without_message(text):
     if isinstance(statement, ast.Assert):
         return 'assert ' + ast.unparse(statement.test)
     if (isinstance(statement, ast.Expr) and isinstance(statement.value, ast.Call)
-            and isinstance(statement.value.func, ast.Attribute)
-            and statement.value.func.attr.startswith('assert')):
+            and isinstance(statement.value.func, ast.Attribute) and statement.value.func.attr.startswith('assert')):
         call = statement.value
         func = call.func
         assert isinstance(func, ast.Attribute)
@@ -1009,8 +1009,8 @@ def _bind(text, bindings):
         kind = 'fixture'
     elif _derived(value, bindings):
         kind = 'derived'
-    elif _step_value(value, bindings):
-        kind = 'step'
+    elif _step_value(value, bindings) or _workflow_read(value, bindings):
+        kind = 'step' if _step_value(value, bindings) else 'workflow'
     elif isinstance(value, ast.Constant) and isinstance(value.value, str):
         kind = 'literal'
     else:

@@ -60,8 +60,8 @@ class Findings(unittest.TestCase):
             self.assertEqual(self.flagged(diff('tests/test_wf.py', line), coupled=False), [], line)
 
     def test_get_access_is_flagged(self):
-        for line in ('assert step.get("uses") == "actions/checkout@v4"',
-                     'assert step.get("with", {}).get("fetch-depth") == 2'):
+        for line in ('assert step.get("uses") == "actions/checkout@v4"', 'assert step.get("with", {}).get("fetch-depth") == 2',
+                     'assert all(s.get("uses") != "actions/checkout@v3" for s in steps)', 'assert all(s.get("with", {}).get("fetch-depth") == 2 for s in steps)'):
             self.assertEqual(len(self.flagged(diff('tests/test_wf.py', line))), 1, line)
 
     def test_a_multi_line_assert_is_one_statement_reported_at_its_first_line(self):
@@ -74,13 +74,13 @@ class Findings(unittest.TestCase):
         self.assertEqual([n for _, n, _ in mod.findings(text, (), lambda p: True)], [2, 3])
 
     def test_a_comparison_with_a_computed_value_is_not_flagged(self):
-        for line in ("assert download['uses'] == _shipped_action_pin('actions/download-artifact')",
-                     "assert step['uses'] == expected_uses"):
+        for line in ("assert download['uses'] == _shipped_action_pin('actions/download-artifact')", "assert step['uses'] == expected_uses"):
             self.assertEqual(self.flagged(diff('tests/test_wf.py', line)), [], line)
 
     def test_no_checkout_invariants_are_not_flagged(self):
         for line in ('self.assertFalse(any(step.get("uses", "").startswith("actions/checkout@") for step in steps))',
-                     'assert not any(s["uses"].startswith("actions/checkout@") for s in job)'):
+                     'assert not any(s["uses"].startswith("actions/checkout@") for s in job)',
+                     'assert all(step.get("uses", "").partition("@")[0] != "actions/checkout" for step in job["steps"])'):
             self.assertEqual(self.flagged(diff('tests/test_wf.py', line)), [], line)
 
     def test_a_file_that_never_reads_workflows_is_not_screened(self):
@@ -90,8 +90,7 @@ class Findings(unittest.TestCase):
     def test_absence_and_cross_step_checks_are_not_flagged(self):
         for line in ('expect(step.with ?? {}, "trusted ref").not.toHaveProperty("ref");',
                      'expect(upload?.with?.path).toBe(scanStep?.env?.GITLEAKS_REPORT_PATH);',
-                     "assert set(step['with']) <= set(declared)",
-                     "assert 'ref' not in checkout['with']"):
+                     "assert set(step['with']) <= set(declared)", "assert 'ref' not in checkout['with']"):
             self.assertEqual(self.flagged(diff('tests/test_wf.py', line)), [], line)
 
     def test_an_assert_on_uses_is_flagged(self):
@@ -104,8 +103,7 @@ class Findings(unittest.TestCase):
 
     def test_an_assert_on_with_inputs_is_flagged(self):
         for line in ('assert upload["with"]["name"] == "comment-share-data"',
-                     "assert checkout['with']['fetch-depth'] == '2'",
-                     'expect(step.with.target).toBe("15")'):
+                     "assert checkout['with']['fetch-depth'] == '2'", 'expect(step.with.target).toBe("15")'):
             self.assertEqual(len(self.flagged(diff('tests/test_wf.py', line))), 1, line)
 
     def test_locating_a_step_by_its_uses_prefix_is_not_flagged(self):
@@ -758,8 +756,7 @@ assert names[index + 1] == 'Install actionlint', (
 assert step['uses'] == 'actions/checkout@v4'
 """
         found = self.screen(source)
-        self.assertEqual([(n, text) for _, n, text in found],
-                         [(6, "assert step['uses'] == 'actions/checkout@v4'")])
+        self.assertEqual([(n, text) for _, n, text in found], [(6, "assert step['uses'] == 'actions/checkout@v4'")])
 
     def test_single_file_full_history(self):
         self.assertEqual(len(self.screen("assert checkout['with'].get('fetch-depth') == '0', checkout")), 1)
@@ -1092,8 +1089,7 @@ class SettledPinBoundary(unittest.TestCase):
         ):
             with self.subTest(decoy=source):
                 self.assertEqual(self.screen(source), [])
-        self.assertEqual(self.screen('assert "fetch-depth: 0" in text',
-                                     "text = Path('fixture.txt').read_text()"), [])
+        self.assertEqual(self.screen('assert "fetch-depth: 0" in text', "text = Path('fixture.txt').read_text()"), [])
 
     def test_enumerated_security_invariants_only(self):
         for paths in (
@@ -1372,8 +1368,7 @@ assert step["with"]["ref"] == f"${{{{ steps.{image['id']}.outputs.ref }}}}"
 self.assertRegex(line, PINNED_USE)'''
         for reader in ("text = Path('.github/workflows/ci.yml').read_text()",
                        "text = Path('.github/actions/db/action.yml').read_text()",
-                       "text = Path('Dockerfile').read_text()",
-                       "text = Path('compose.yml').read_text()"):
+                       "text = Path('Dockerfile').read_text()", "text = Path('compose.yml').read_text()"):
             for source in (compiled,
                            compiled.replace("self.assertRegex", "def test_pin():\n    self.assertRegex"),
                            'assert re.fullmatch(r"sha256:[0-9a-f]{64}", digest)',
@@ -2175,6 +2170,9 @@ class ExecutedAndDerivedReads(unittest.TestCase):
             'doc = yaml.safe_load((ROOT / ".github/workflows/size.yml").read_text())\n'
             'stage = doc["jobs"]["size"]["steps"][0]\n' + self.STEPS.split('\n', 2)[2]
             + 'directories = ' + self.FINDALL + 'stage["run"])\n' + self.NAME + 'directories[0]',
+            # the other step's field is interpolated into the compared string, its job read through a name
+            self.STEPS + self.NAME + 'f"${{{{ steps.{stage[\'id\']}.outputs.evidence }}}}"',
+            'job = _workflow()["jobs"]["build"]\nstep = job["steps"][0]\nfollowing = job["steps"][1]\nassert following["with"]["path"] == f"${{{{ steps.{step[\'id\']}.outputs.evidence }}}}"',
         ):
             with self.subTest(source=source):
                 self.assertEqual(self.screen(source), [])
@@ -2191,6 +2189,7 @@ class ExecutedAndDerivedReads(unittest.TestCase):
             # the field is the same step's whose input is read
             self.STEPS + 'directories = ' + self.FINDALL + 'upload["run"])\n' + self.NAME + 'directories[0]',
             self.STEPS + self.NAME + self.FINDALL + 'upload["run"])[0]',
+            self.STEPS + 'assert stage["with"]["name"] == f"${{{{ steps.{stage[\'id\']}.outputs.evidence }}}}"',
             # the value only passes through a call with no step-field argument
             self.STEPS + self.NAME + '"size-baseline-x".split("-x")[0]',
             # the "step" is a held dict, or parsed from literal fixture text, not read from the workflows
@@ -2203,6 +2202,7 @@ class ExecutedAndDerivedReads(unittest.TestCase):
             + self.NAME + self.FINDALL + 'stage["run"])[0]',
             'fixture = [{"run": \'data="${RUNNER_TEMP}/size-baseline"\'}]\nstage = fixture[0]\n'
             + self.STEPS.split('\n', 2)[2] + self.NAME + self.FINDALL + 'stage["run"])[0]',
+            'job = yaml.safe_load("jobs: {}")["jobs"]["size"]\nstage = job["steps"][0]\n' + self.STEPS.split('\n', 2)[2] + self.NAME + self.FINDALL + 'stage["run"])[0]',
         ):
             with self.subTest(source=source):
                 self.assertEqual(len(self.screen(source)), 1)
