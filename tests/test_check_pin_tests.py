@@ -79,7 +79,7 @@ class Findings(unittest.TestCase):
 
     def test_no_checkout_invariants_are_not_flagged(self):
         for line in ('self.assertFalse(any(step.get("uses", "").startswith("actions/checkout@") for step in steps))',
-                     'assert not any(s["uses"].startswith("actions/checkout@") for s in job)',
+                     'assert not any(s["uses"].startswith("actions/checkout@") for s in job)', 'assert all(s["with"].get("ref") is not None for s in steps)',
                      'assert all(step.get("uses", "").partition("@")[0] != "actions/checkout" for step in job["steps"])'):
             self.assertEqual(self.flagged(diff('tests/test_wf.py', line)), [], line)
 
