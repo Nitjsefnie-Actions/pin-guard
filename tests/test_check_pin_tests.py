@@ -1386,15 +1386,15 @@ class WorkflowRunArtifactTests(unittest.TestCase):
 
     def test_a_tail_is_settled_unparsed_only_where_its_whole_parse_agrees(self):  # a margin, a blanked row, a grammar change
         tails = importlib.import_module('py_tails')
-        self.assertFalse(tails._fails_early([('t.py', 1, '    x = 1')] * 6, 0))  # dedent strips the margin a prefix keeps
-        self.assertFalse(tails._fails_early([('t.py', 1, t) for t in ('x = 1', 'y = 2', '\xa0', *['z = 3'] * 17)], 0))
-        self.assertEqual([tails._alone([('t.py', 1, t)], mod._parse, d) for t, d in (('x = 1', 0), ('from __future__ import barry_as_FLUFL', 0), ('@d', 1), ('# c', 1), ('x = 1', 1))], [True, False, True, False, False])
-        self.assertEqual(tails.first_tree([('t.py', 1, '@d'), ('t.py', 2, 'x = 1')], [0, 1], mod._parse)[0], 1)  # a decorator row hands on no failure alone
+        self.assertEqual([tails._fails_early(rows, 0) for rows in ([('t.py', 1, '    x = 1')] * 6, [('t.py', 1, t) for t in ('x = 1', 'y = 2', '\xa0', *['z = 3'] * 17)])], [False] * 2)  # dedent strips a margin, blanks a row
+        self.assertEqual([[tails._joins, tails._decorates][d]([('t.py', 1, t)]) for t, d in (('x = 1', 0), ('from __future__ import barry_as_FLUFL', 0), ('@d', 1), ('# c', 1), ('x = 1', 1))], [True, False, True, False, False])
+        self.assertEqual([tails.first_tree([('t.py', 1, a), ('t.py', 2, 'x = 1')], [0, 1], mod._parse)[0] for a in ('@d', '  \\', '\\ ', '# c')], [1, 1, 1, 0])  # only a comment row takes the next row's verdict
 
     def test_a_hunk_no_tail_of_parses_is_parsed_in_input_linear_in_its_size(self):  # a whole-tail parse per row is quadratic
         sizes, real = [], compile
         for texts in ([f'{n}, {n}' for n in range(500)] + ['total rows'] + [f'- item {n}' for n in range(500)], [f'@name{n}' for n in range(8000)],
-                      [f'@types/node-{n}' for n in range(2000)], ['"""doc', 'end"""'] * 1000 + ['"""doc']):
+                      [f'@types/node-{n}' for n in range(2000)], ['"""doc', 'end"""'] * 1000 + ['"""doc'], ['# team', *['@user'] * 7] * 250, ['\\'] * 2000,
+                      ['@user', '# team'] * 1000 + ['@user'], ['"""a', 'b', 'c"""'] * 700 + ['"""'], ['try:', '    x', 'except E:', '    y'] * 500 + ['y = ('], ['@d', 'def f():', '    pass'] * 700 + ['x = ['], ['if x:', '    pass', 'elif y:', '    pass', 'else:', '    pass'] * 400 + ['y = ('], ['x = 1 \\', '# c'] * 1000 + ['['], ['"""', '# c'] * 1000 + ['if x:']):
             del sizes[:]
             with mock.patch('builtins.compile', lambda source, *args, **kwargs: sizes.append(len(source)) or real(source, *args, **kwargs)):
                 self.assertEqual(mod._enumerated_invariants([('tests/f.yml', 1, '@', '')] + [('tests/f.yml', 1, '+', t) for t in texts]), set())
