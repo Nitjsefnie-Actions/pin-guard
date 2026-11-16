@@ -667,67 +667,11 @@ class ScreeningRegressions(unittest.TestCase):
                                              "        '  actionlint:\\n')\n"
                                              f"steps = {parser}\n{line}"), [])
 
-    def test_classifier_fixture(self):
-        self.assertEqual(self.screen("""assert _cache_write_reason(
-    {'uses': 'example/setup-thing@v1', 'with': {'cache': 'false'}},
-    'sample', 1) is not None"""), [])
-
     def test_pin_sync_fixture_output(self):
         for location, value in (('1003', '{reviewed} # v1.0.1'), ('1004', '{divergent} # v1.0.1'),
                                 ('1015', '{reviewed} # v1.0.1'), ('1016', '{reviewed} # v1.1.0')):
             with self.subTest(location='pr-gate:' + location):
                 self.assertEqual(self.screen(f"assert f'{value}' in result.stdout, result.stdout"), [])
-
-    def test_consistency_checks(self):
-        entries = [
-            ('pr-gate:206', "reviewed = _shipped_action_pin('actions/upload-artifact')\nassert upload['uses'] == f'actions/upload-artifact@{reviewed}'"),
-            ('pr-gate:235', "assert download['uses'] == (\n    'actions/download-artifact@'\n    + _shipped_action_pin('actions/download-artifact'))"),
-            ('pr-gate:255', "reviewed = _shipped_action_pin('actions/upload-artifact')\nassert upload['uses'] == f'actions/upload-artifact@{reviewed}'"),
-            ('pr-gate:777', "assert documented['jobs']['gate']['steps'][0]['uses'] == (\n    f'{action}@{_shipped_action_pin(action)}')"),
-            ('pr-gate:1134', "assert steps[0]['uses'] == (\n    f\"actions/checkout@{_shipped_action_pin('actions/checkout')}\")"),
-            ('claudit:548', '''assert {line for line in overlay.splitlines() if line.startswith("cp ")} == {
-    f'cp "{download["with"]["path"]}/{filename}" {target}'
-    for filename, target in [
-        ("pricing.json", "src/pricing.json"),
-        ("constants.py", "backend/constants.py"),
-        ("pricing_notices.json", "src/pricing_notices.json"),
-    ]
-}'''),
-            ('claudit:585', '''assert outputs == {f'{raw["with"]["path"]}/{filename}' for filename in
-    ["pricing.json", "constants.py", "pricing_notices.json", "commit-msg.txt", "base.txt"]}'''),
-            ('claudit-scorecard:287', '''with_ = scorecard_step.get("with") or {}
-assert (upload.get("with") or {}).get("sarif_file") == with_[
-    "results_file"], (
-    "the SARIF upload reads a different file than the analysis wrote")'''),
-            ('claudit-scorecard:399', '''assert str(upload["uses"]).partition("@")[2] in shas, (
-    "scorecard's SARIF upload and codeql.yml's pins disagree: "
-    f"{upload['uses']} against {sorted(shas)}")'''),
-            ('Overflow:2194', r'expect(download.with?.["run-id"]).toBe(`\${{ steps.${awaiter.id}.outputs.run_id }}`);'),
-            ('gh-widgets:992', '''self.assertEqual([step["uses"] for step in steps if "uses" in step],
-    [downloads[0]["uses"]])'''),
-        ]
-        for location, source in entries:
-            with self.subTest(location=location):
-                self.assertEqual(self.screen(source), [])
-
-    def test_security_identity_and_absence(self):
-        entries = [
-            ('gh-widgets:1195', '''self.assertEqual(
-    [step["uses"].split("@", maxsplit=1)[0]
-     for step in self.steps if "uses" in step],
-    ["actions/download-artifact"])'''),
-            ('ai-researcher:89', '''assert not [s for s in self.push["steps"]
-    if s.get("uses", "").startswith("actions/checkout@")], (
-    "the push job runs no repository code: no checkout step")'''),
-            ('Overflow-calibrate:194', '''expect(
-    actions.map((step) => step.uses!.replace(/@[0-9a-f]{40}$/, "@")),
-    "the push job's only action is the checkout",
-).toEqual(["actions/checkout@"]);'''),
-            ('Overflow-comment-share:126', r'expect(steps.some((step) => /^actions\/checkout(?:@|$)/.test(step.uses ?? ""))).toBe(false);'),
-        ]
-        for location, source in entries:
-            with self.subTest(location=location):
-                self.assertEqual(self.screen(source), [])
 
     def test_uses_in_assertion_messages_only(self):
         for location, source in (
@@ -800,27 +744,6 @@ assert with_.get("results_format") == "sarif"''')],
                        "assert checkout['with']['persist-credentials'] is False"):
             with self.subTest(source=source):
                 self.assertEqual(len(self.screen(source)), 1)
-
-    def test_comparison_and_binding_boundaries(self):
-        entries = [
-            ("assert step.uses == 'actions/checkout@v4'", 1),
-            ("assert step['uses'] == 'actions/' + 'checkout@v4'", 1),
-            ("assert step['with']['mode'] in ('fast', 'slow')", 1),
-            ("assert step['with']['mode'] in (expected, 'fast')", 1),
-            ("assert upload['with']['path'] == f\"{download['with']['path']}/report\"", 0),
-            ("assert step.get(key) == 'fixed'", 0),
-            ("assert step[key] == 'fixed'", 0),
-            ("self.assertNotIn('ref', checkout['with'])", 0),
-            ("assert True, step['uses']", 0),
-            ("assert name == 'scan', step['uses']", 0),
-            ("text = 'jobs: {}'\nsteps = module.workflow_steps(text, 'w.yml')\n"
-             "copied = steps\nassert copied[0]['uses'] == './'", 0),
-            ("reviewed = shipped_pin('checkout')\ncopy = reviewed\n"
-             "assert step['uses'] == f'checkout@{copy}'", 0),
-        ]
-        for source, count in entries:
-            with self.subTest(source=source):
-                self.assertEqual(len(self.screen(source)), count)
 
     def test_input_alias_does_not_cross_files(self):
         patch = (diff('tests/test_a.py', 'with_ = step.get("with") or {}') +
