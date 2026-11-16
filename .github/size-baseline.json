@@ -1,10 +1,10 @@
 {
   "trees": {
-    "tests/": 3831
+    "tests/": 3813
   },
   "schema_version": 1,
   "baseline": {
-    "check_pin_tests.py": 1304,
-    "tests/test_check_pin_tests.py": 2214
+    "check_pin_tests.py": 1279,
+    "tests/test_check_pin_tests.py": 2154
   }
 }
