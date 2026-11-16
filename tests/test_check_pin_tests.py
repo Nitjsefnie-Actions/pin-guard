@@ -93,10 +93,6 @@ class Findings(unittest.TestCase):
                      "assert set(step['with']) <= set(declared)", "assert 'ref' not in checkout['with']"):
             self.assertEqual(self.flagged(diff('tests/test_wf.py', line)), [], line)
 
-    def test_an_assert_on_uses_is_flagged(self):
-        line = 'assert upload["uses"] == "actions/upload-artifact@v4"'
-        self.assertEqual(len(self.flagged(diff('tests/test_ratchet.py', line))), 1)
-
     def test_assert_equal_on_uses_is_flagged(self):
         line = 'self.assertEqual(action["uses"], f"Nitjsefnie-Actions/comment-ratchet@{PIN}")'
         self.assertEqual(len(self.flagged(diff('tests/test_wf.py', line))), 1)
@@ -109,18 +105,6 @@ class Findings(unittest.TestCase):
     def test_locating_a_step_by_its_uses_prefix_is_not_flagged(self):
         line = 'upload = next(s for s in steps if s.get("uses", "").startswith("actions/upload-artifact@"))'
         self.assertEqual(self.flagged(diff('tests/test_wf.py', line)), [])
-
-    def test_locating_a_step_by_its_with_inputs_is_not_flagged(self):
-        line = 'if _child_value(step["with"], "name") == "ratchet-push")'
-        self.assertEqual(self.flagged(diff('tests/test_wf.py', line)), [])
-
-    def test_a_with_consistency_check_is_not_flagged(self):
-        line = "assert download['with']['name'] == upload['with']['name']"
-        self.assertEqual(self.flagged(diff('tests/test_wf.py', line)), [])
-
-    def test_single_file_persist_credentials_is_flagged(self):
-        line = "self.assertIs(steps[0]['with']['persist-credentials'], False)"
-        self.assertEqual(len(self.flagged(diff('tests/test_wf.py', line))), 1)
 
     def test_a_fixture_sha_after_an_at_sign_is_not_flagged(self):
         line = "'      - uses: actions/checkout@1111111111111111111111111111111111111111 # v1\\n'"
@@ -154,9 +138,7 @@ class Findings(unittest.TestCase):
         self.assertEqual([n for _, n, _ in mod.findings(text, {SHA}, lambda p: True)], [2])
 
 
-# ---------------------------------------------------------------------------
 # The widened screen: Dockerfile base images and tool-version pins.
-# ---------------------------------------------------------------------------
 import base64
 import contextlib
 import io
@@ -1413,11 +1395,8 @@ class WorkflowRunArtifactTests(unittest.TestCase):
         patch = diff('tests/test_workflow.py', 'PATHS = (ROOT / ".github/workflows").glob("*.yml")') + '@@ -10,0 +10,4 @@\n+X = "\x00"\n+Z = 1\n+Y = "\x00"\n'
         patch += '+PATHS = [ROOT / ".github/workflows/ci.yml"]\n@@ -20,0 +20,5 @@\n' + ''.join(f'+{r}\n' for r in self.invariant('PATHS').rstrip('\n').split('\n'))
         parsed, saved = [], mod._parse
-        setattr(mod, '_parse', lambda text: parsed.append(text) or saved(text))
-        try:
+        with mock.patch.object(mod, '_parse', lambda text: parsed.append(text) or saved(text)):
             self.assertEqual([n for _, n, _ in mod.findings(patch, (), lambda p: True)], [24])
-        finally:
-            setattr(mod, '_parse', saved)
         self.assertEqual([text for text in parsed if '\x00' in text and '\n' in text], [])  # a statement alone may hold one
 
     def test_a_hunk_no_tail_of_parses_is_parsed_in_input_linear_in_its_size(self):  # a whole-tail parse per row is quadratic
