@@ -49,6 +49,7 @@ tests/*
 !tests/test_status_comment.py
 !tests/test_action.py
 !tests/test_gitlab_ci.py
+!tests/test_pr_diff.py
 !scripts/
 scripts/*
 !scripts/ci/
@@ -58,5 +59,6 @@ scripts/ci/*
 !scripts/ci/status_comment.py
 !scripts/ci/aggregate_gate.py
 !scripts/ci/pin_sources.py
+!scripts/ci/pr_diff.py
 !pytest.ini
 !requirements-test.txt
