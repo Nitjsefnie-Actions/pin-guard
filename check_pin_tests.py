@@ -144,6 +144,7 @@ import warnings
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), 'scripts', 'ci'))
 
 from pin_sources import CannotScreen, dockerfile_pins, gitlab_ci, manifest_pins, source_kind  # pylint: disable=unused-import
+from pr_diff import read_diff
 
 
 def _parse(text):
@@ -1250,14 +1251,12 @@ def main(argv=None):
 def _screen(args):
     unscreened = []
     try:
-        head = json.loads(_gh('pr', 'view', str(args.pr), '-R', args.repo, '--json', 'headRefOid'))['headRefOid']
-        diff_text = _gh('pr', 'diff', str(args.pr), '-R', args.repo)
+        head, diff_text, cache = read_diff(_gh, args.repo, args.pr)
         pins, held, included = head_sources(args.repo, head, unscreened)
     except (subprocess.CalledProcessError, KeyError, ValueError) as exc:
         detail = getattr(exc, 'stderr', '') or str(exc)
         print(f'check_pin_tests: cannot read {args.repo} PR {args.pr}: {detail.strip()}', file=sys.stderr)
         return 2
-    cache = {}
 
     def reads_source(path, kind):
         if path not in cache:
