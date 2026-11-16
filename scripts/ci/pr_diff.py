@@ -1,4 +1,5 @@
 """read_diff(gh, repo, pr): the PR's head and diff, plus the head's changed files when git made the diff.
+diff_rows(diff_text): its rows; output(argv): a command's stdout.
 
 On GitHub's HTTP 406 (a diff past its limits, such as 300 files) git diffs the merge base and head.
 """

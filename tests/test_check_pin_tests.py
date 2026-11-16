@@ -520,6 +520,7 @@ class WidenedFindings(unittest.TestCase):
 
 
 SHA_HEAD = 'c' * 40
+ENDS = '\r\x0b\x0c\x1c\x1d\x1e\x85\u2028\u2029'  # every line end str.splitlines() honours but a newline
 
 
 def http_fail(stderr='HTTP 404: Not Found'):
@@ -639,12 +640,13 @@ class Main(unittest.TestCase):
         self.assertEqual(err, ['could not screen Dockerfile: HTTP 404: Not Found', self.SUMMARY_FOUND.format(1)])
 
     def test_a_binary_test_file_is_named_and_a_quoted_one_screened(self):
-        quoted = diff('tests/t\u00e9st_x.py', 'assert v == "1.2.3"').replace('+++ b/tests/t\u00e9st_x.py', '+++ "b/tests/t\\303\\251st_x.py"')
-        binary = ''.join(f'diff --git a/{p} b/{p}\nBinary files /dev/null and b/{p} differ\n' for p in ('tests/test_b.py', 'logo.png'))
+        quoted = diff('tests/t\u00e9st_x.py', f'x = 1{ENDS}assert v == "1.2.3"').replace('+++ b/tests/t\u00e9st_x.py', '+++ "b/tests/t\\303\\251st_x.py"')
+        binary = ''.join(f'diff --git x\nBinary files /dev/null and {p} differ\n' for p in ('"b/tests/test\\nb.py"', 'b/logo.png'))
         code, out, err, _ = self.run_main(quoted + binary, {'package.json': '{"dependencies": {"a": "1.2.3"}}'},
                                           {'tests/t\u00e9st_x.py': 'PKG = json.loads((ROOT / "package.json").read_text())\n'})
-        self.assertEqual((code, out), (2, ['tests/t\u00e9st_x.py:1: assert v == "1.2.3"']))
-        self.assertEqual(err, ['could not screen tests/test_b.py: the diff shows it only as binary', self.SUMMARY_FOUND.format(1)])
+        escaped = ENDS.encode('unicode_escape').decode()  # each printed row stays one line for the action that splits them
+        self.assertEqual((code, out), (2, [f'tests/t\u00e9st_x.py:1: x = 1{escaped}assert v == "1.2.3"']))
+        self.assertEqual(err, ['could not screen tests/test\\nb.py: the diff shows it only as binary', self.SUMMARY_FOUND.format(1)])
 
     def test_head_context_numbers_lines_as_git_does(self):  # a form feed ends a line for str.splitlines() alone
         head = ('x = 0  # \x0c\nPATHS = (ROOT / ".github/workflows").glob("*.yml")\nfor candidate in PATHS:\n'
