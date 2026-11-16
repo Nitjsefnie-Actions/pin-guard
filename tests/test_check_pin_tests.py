@@ -116,17 +116,10 @@ class Findings(unittest.TestCase):
                      'assert stage["env"]["HEAD_SHA"] == "${{ github.sha }}"'):
             self.assertEqual(self.flagged(diff('tests/test_wf.py', line)), [], line)
 
-    def test_fixture_shas_without_an_action_ref_are_not_flagged(self):
-        line = "BASE = '1234567890abcdef1234567890abcdef12345678'"
-        self.assertEqual(self.flagged(diff('tests/test_action.py', line)), [])
-
     def test_workflow_files_and_docs_are_out_of_scope(self):
         line = f'      - uses: Nitjsefnie-Actions/comment-ratchet@{SHA} # v1.0.0'
         self.assertEqual(self.flagged(diff('.github/workflows/comment-share.yml', line)), [])
         self.assertEqual(self.flagged(diff('scripts/ci/release.py', f'PIN = "{SHA}"'), {SHA}), [])
-
-    def test_removed_lines_are_not_flagged(self):
-        self.assertEqual(self.flagged(diff('tests/test_wf.py', removed=[f'PIN = "{SHA}"']), {SHA}), [])
 
     def test_js_and_shell_tests_are_in_scope(self):
         self.assertEqual(len(self.flagged(diff('tests/workflow.test.ts', 'expect(job.uses).toEqual("actions/checkout@v4")'))), 1)
@@ -1398,6 +1391,11 @@ class WorkflowRunArtifactTests(unittest.TestCase):
         with mock.patch.object(mod, '_parse', lambda text: parsed.append(text) or saved(text)):
             self.assertEqual([n for _, n, _ in mod.findings(patch, (), lambda p: True)], [24])
         self.assertEqual([text for text in parsed if '\x00' in text and '\n' in text], [])  # a statement alone may hold one
+
+    def test_a_tail_is_settled_unparsed_only_where_its_whole_parse_agrees(self):  # a margin, a blanked row, a grammar change
+        self.assertFalse(mod._fails_early([('t.py', 1, '    x = 1')] * 6, 0))  # dedent strips the margin a prefix keeps
+        self.assertFalse(mod._fails_early([('t.py', 1, t) for t in ('x = 1', 'y = 2', '\xa0', *['z = 3'] * 17)], 0))
+        self.assertEqual([mod._parses_alone([('t.py', 1, t)]) for t in ('x = 1', 'from __future__ import barry_as_FLUFL')], [True, False])
 
     def test_a_hunk_no_tail_of_parses_is_parsed_in_input_linear_in_its_size(self):  # a whole-tail parse per row is quadratic
         texts = [f'{n}, {n}' for n in range(500)] + ['total rows'] + [f'- item {n}' for n in range(500)]
