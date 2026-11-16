@@ -9,8 +9,8 @@ value (the action's SHA, release, version comment or pin shape) or its
 version. A legitimate bump must never fail a test.
 
 The action reads the pull request through the GitHub API at the head being
-screened. When GitHub refuses the pull request's diff (more than 300 files or
-20,000 lines), it fetches the merge base and the head without file contents
+screened. When GitHub refuses the pull request's diff (more than 300 files, or
+another of its diff limits), it fetches the merge base and the head without file contents
 into a temporary bare repository, and git computes the same diff, lazily
 fetching only the changed files. It never checks out or executes pull-request
 code.

@@ -39,12 +39,12 @@ class ReadDiff(unittest.TestCase):
             return git('rev-parse', 'HEAD').strip()
         repo.mkdir(parents=True)
         git('init', '-q')
+        git('config', 'uploadpack.allowFilter', 'true')  # so the fetch is blobless and the diff fetches lazily
         cls.merge_base = commit('start', {'a.py': 'a\n', 'gone.py': 'g\n'})
         cls.head = commit('head', {'a.py': 'a\nb\n', 'new.py': 'n\n', 'gone.py': '', 'moved.py': 'g\n'})
         cls.base = commit('main', {'gone.py': 'G\n'})  # the base branch moved past the merge base
 
     def gh(self, served=None, refusal='HTTP 406: Sorry, the diff exceeded the maximum number of files (300).', merge_base=None):
-        """A gh double for one pull request; a call it does not model raises KeyError."""
         answers = {('pr', 'view', '9', '-R', 'o/r', '--json', 'headRefOid'): json.dumps({'headRefOid': self.head}),
                    ('pr', 'view', '9', '-R', 'o/r', '--json', 'baseRefOid'): json.dumps({'baseRefOid': self.base}),
                    ('api', f'repos/o/r/compare/{self.base}...{self.head}?per_page=1'):
@@ -57,8 +57,9 @@ class ReadDiff(unittest.TestCase):
             return answers[args]
         return fake
 
-    def setUp(self):
+    def setUp(self):  # every fetch also runs under an ambient config that would drop the diff's b/ prefix
         self.enterContext(mock.patch.object(mod, 'REMOTE', self.remote))
+        self.enterContext(mock.patch.dict(os.environ, {'GIT_CONFIG_PARAMETERS': "'diff.noprefix'='true'"}))
 
     def test_a_refused_diff_is_the_merge_base_to_head_diff_with_the_heads_files(self):
         head, diff_text, contents = mod.read_diff(self.gh(), 'o/r', 9)
@@ -73,5 +74,4 @@ class ReadDiff(unittest.TestCase):
         self.assertEqual(caught.exception.stderr, 'HTTP 502: Bad Gateway')
 
     def test_a_failed_fetch_is_raised_never_an_empty_diff(self):
-        with self.assertRaisesRegex(subprocess.CalledProcessError, "'fetch'"):
-            mod.read_diff(self.gh(merge_base='0' * 40), 'o/r', 9)
+        self.assertRaisesRegex(subprocess.CalledProcessError, "'fetch'", mod.read_diff, self.gh(merge_base='0' * 40), 'o/r', 9)
