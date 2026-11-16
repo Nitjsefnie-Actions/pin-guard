@@ -1252,7 +1252,8 @@ def _screen(args):
         reads_source(path, 'workflow')
         if cache[path] is not None:
             lines, mark = cache[path].removesuffix('\n').split('\n'), '+' if path in binary else ' '
-            context.append(f'+++ b/{path}\n@@ -1,{len(lines)} +1,{len(lines)} @@\n'
+            name = ''.join(f'\\{ord(c):03o}' if c < ' ' or c in '"\\' else c for c in f'b/{path}')
+            context.append(f'+++ "{name}"\n@@ -1,{len(lines)} +1,{len(lines)} @@\n'
                            + ''.join(f'{mark}{line}\n' for line in lines))
     found = findings(''.join(context) + diff_text, pins, None, held, reads_source)
     for path, line, text in found:
