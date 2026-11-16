@@ -63,7 +63,7 @@ def _path(name):
 
 def diff_rows(diff_text):
     """Yield hunk rows as (path, line, kind, text); '@' marks a hunk, '!' a binary file. Rows end at \\n alone."""
-    path, line, renamed, old, new = None, 0, None, 0, 0  # old, new: removed and added rows the hunk still counts
+    path, line, renamed, old, new = None, 0, None, 0, 0  # old, new: rows the hunk still counts
     for raw in re.split(r'\r?\n', diff_text):
         if raw.startswith('+++ ') and new <= 0:
             target = _path(raw[4:])

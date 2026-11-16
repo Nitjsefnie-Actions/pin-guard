@@ -49,13 +49,12 @@ def diffable_lines(repo, pr):
 
     Reads `repos/{repo}/pulls/{pr}/files?per_page=100` with `--paginate
     --slurp` (one array of page arrays, flattened here) and counts each
-    patch's added lines from its hunk's new start; a file without a patch
-    (binary, too large) yields no anchors.
+    patch's added lines; a file without a patch (binary, too large) yields none.
     """
     pages = json.loads(gh('api', f'repos/{repo}/pulls/{pr}/files?per_page=100', '--paginate', '--slurp'))
     diffable = set()
     for item in (file for page in pages for file in page):
-        rows = diff_rows(f'+++ b/_\n{item.get("patch") or ""}')  # the listing's patch is the diff without its headers
+        rows = diff_rows(f'+++ b/_\n{item.get("patch") or ""}')
         diffable.update((item['filename'], line) for _, line, kind, _ in rows if kind == '+')
     return diffable
 
