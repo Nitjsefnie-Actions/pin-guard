@@ -132,8 +132,6 @@ screen cannot see.
 """
 import argparse
 import ast
-import base64
-import json
 import os
 import re
 import subprocess
@@ -143,7 +141,7 @@ import warnings
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), 'scripts', 'ci'))
 
-from pin_sources import CannotScreen, dockerfile_pins, gitlab_ci, manifest_pins, source_kind  # pylint: disable=unused-import
+from pin_sources import _ACTION_PIN, CannotScreen, dockerfile_pins, gitlab_ci, head_sources, manifest_pins, source_kind  # pylint: disable=unused-import
 from pr_diff import diff_rows, output, read_diff
 
 
@@ -155,7 +153,6 @@ def _parse(text):
         return ast.parse(text)
 
 
-_ACTION_PIN = re.compile(r'@([0-9a-f]{40})\b')
 _SHA = re.compile(r'\b([0-9a-f]{40})\b')
 _WITH_KEY = re.compile(r"""\[\s*["']with["']\s*\]|\.with\b|\.get\(\s*["']with["']""")
 _KEY = re.compile(r"""\[\s*["'](?:uses|with)["']\s*\]|\.uses\b|\.with\b|\.get\(\s*["'](?:uses|with)["']"""
@@ -1163,47 +1160,6 @@ def _gh(*args):
     return output(['gh', *args])
 
 
-def head_sources(repo, sha, unscreened):
-    """(SHAs the workflows pin, {source kind: pinned literals}, GitLab CI includes) from the head's tree.
-
-    A tree GitHub truncated, or a source it cannot fetch, parse or find, is named on
-    stderr and appended to unscreened."""
-    tree = json.loads(_gh('api', f'repos/{repo}/git/trees/{sha}?recursive=1'))
-    if tree.get('truncated'):
-        _cannot_screen(unscreened, f'the tree at {sha}', 'GitHub truncated the recursive listing')
-    pins, held, included = set(), {}, []
-    blobs = {e.get('path', ''): e['sha'] for e in tree.get('tree', []) if e.get('type') == 'blob'}
-    queue = [(path, source_kind(path)) for path in blobs if source_kind(path)]
-    while queue:
-        path, kind = queue.pop(0)
-        try:
-            blob = json.loads(_gh('api', f'repos/{repo}/git/blobs/{blobs[path]}'))
-            text = base64.b64decode(blob['content']).decode('utf-8', 'replace')
-            held.setdefault(kind, set()).update(manifest_pins(kind, text))
-        except subprocess.CalledProcessError as exc:
-            _cannot_screen(unscreened, path, (exc.stderr or str(exc)).strip())
-            continue
-        except (CannotScreen, KeyError, ValueError) as exc:
-            _cannot_screen(unscreened, path, str(exc))
-            continue
-        if kind == 'workflow':
-            pins.update(_ACTION_PIN.findall(text))
-        for pattern in gitlab_ci(text)[1] if kind == 'gitlab-ci' else ():
-            parts = re.split(r'(\*\*/|\*+)', pattern)
-            if sum('*' in part for part in parts) > 3:
-                _cannot_screen(unscreened, pattern, f'included by {path}, with more than 3 wildcards')
-                continue
-            glob = re.compile(''.join({'**/': '(?:.*/)?', '*': '[^/]*'}.get(part, '.*' if '*' in part else re.escape(part))
-                                      for part in parts))
-            found = [p for p in blobs if glob.fullmatch(p)]
-            if not found:
-                _cannot_screen(unscreened, pattern, f'included by {path}, not in the tree')
-            new = [p for p in found if p not in included and source_kind(p) != 'gitlab-ci']
-            included += new
-            queue += [(p, 'gitlab-ci') for p in new]
-    return pins, held, included
-
-
 _ONE_LINE = {ord(end): repr(end)[1:-1] for end in '\n\r\x0b\x0c\x1c\x1d\x1e\x85\u2028\u2029'}
 
 
@@ -1228,7 +1184,7 @@ def _screen(args):
     unscreened = []
     try:
         head, diff_text, cache = read_diff(_gh, args.repo, args.pr)
-        pins, held, included = head_sources(args.repo, head, unscreened)
+        pins, held, included = head_sources(_gh, args.repo, head, lambda what, why: _cannot_screen(unscreened, what, why))
     except (subprocess.CalledProcessError, KeyError, ValueError) as exc:
         detail = getattr(exc, 'stderr', '') or str(exc)
         print(f'check_pin_tests: cannot read {args.repo} PR {args.pr}: {detail.strip()}', file=sys.stderr)
