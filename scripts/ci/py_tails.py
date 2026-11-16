@@ -8,15 +8,20 @@ import warnings
 _LEXEME = re.compile(r'\\.|"""|' "'''" r'''|["'#()\[\]{}]''')
 _DEFINES = re.compile(r'@|(?:async\s+)?def\b|class\b')
 _CLAUSE = re.compile(r'(?:else|elif|except|finally)\b')
+_LEFT = [0]  # characters compile may still read; past them a path gets no exemption
 
 
-def first_tree(chunk, starts, parse):
+def first_tree(chunk, starts, parse, unfinished):
+    _LEFT[0] = 16 * sum(len(text) + 1 for _, _, text in chunk)
     code = [len(chunk)] * (len(chunk) + 1)  # the first row at or after each with a token
     for row in range(len(chunk) - 1, -1, -1):
         text = chunk[row][2]  # an indented \\ indents its joined line
         code[row] = code[row + 1] if text.isspace() or text.lstrip(' \t\x0c')[:1] in ('', '#') or text == '\\' else row
     views, made, pending, opening, known = [], False, [], set(starts), set()
-    for offset in starts:  # view: scan from a failing start, next row, last start, statement start
+    for offset in starts:  # view: scan from a failing start, next row, last start, its statement
+        if _LEFT[0] < 0:
+            unfinished.add(chunk[0][0])
+            return None
         for view in views:
             while view[1] < offset:
                 view[1] = next(view[0], len(chunk))
@@ -34,13 +39,13 @@ def first_tree(chunk, starts, parse):
         whole = False
         if not _fails_early(chunk, offset):
             try:
-                tree = parse(textwrap.dedent('\n'.join(text for _, _, text in chunk[offset:])))
+                tree = parse(_tail(chunk, offset))
             except SyntaxError:
                 whole = True
             else:
                 for first in pending:
                     try:
-                        return first, parse(textwrap.dedent('\n'.join(text for _, _, text in chunk[first:])))
+                        return first, parse(_tail(chunk, first))
                     except SyntaxError:
                         pass
                 return offset, tree
@@ -89,12 +94,19 @@ def _boundaries(chunk, origin):
         quote = quote if len(quote) == 3 or joined else ''
 
 
+def _tail(chunk, offset):
+    text = textwrap.dedent('\n'.join(text for _, _, text in chunk[offset:]))
+    _LEFT[0] -= len(text)
+    return text
+
+
 def _compiles(lines, suffix=''):
-    """The module, 0 if incomplete, None if failing before the end."""
+    """Module, 0 if incomplete, None if failing early."""
+    text = '\n'.join('' if text.isspace() else text for _, _, text in lines) + suffix
+    _LEFT[0] -= len(text)
     try:
         with warnings.catch_warnings(action='ignore'):
-            return compile('\n'.join('' if text.isspace() else text for _, _, text in lines) + suffix, '<unknown>', 'exec',
-                           ast.PyCF_ONLY_AST | vars(codeop)['PyCF_ALLOW_INCOMPLETE_INPUT'])
+            return compile(text, '<unknown>', 'exec', ast.PyCF_ONLY_AST | vars(codeop)['PyCF_ALLOW_INCOMPLETE_INPUT'])
     except SyntaxError as exc:
         return 0 if type(exc).__name__ == '_IncompleteInputError' else None
 
