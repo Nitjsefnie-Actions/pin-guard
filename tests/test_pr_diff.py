@@ -55,7 +55,7 @@ class ReadDiff(unittest.TestCase):
 
         def fake(*args):
             if answers[args] is None:
-                raise subprocess.CalledProcessError(1, ['gh', refusal], stderr=refusal)
+                raise subprocess.CalledProcessError(1, ['gh', *args], stderr=refusal)
             return answers[args]
         return fake
 
@@ -71,7 +71,7 @@ class ReadDiff(unittest.TestCase):
 
     def test_a_served_diff_is_kept_and_any_other_refusal_raised_without_a_fetch(self):
         self.assertEqual(mod.read_diff(self.gh(served='diff'), 'o/r', 9), (self.head, 'diff', {}))
-        self.assertRaisesRegex(subprocess.CalledProcessError, 'HTTP 502', mod.read_diff, self.gh(refusal='HTTP 502: Bad Gateway'), 'o/r', 9)
+        self.assertRaisesRegex(subprocess.CalledProcessError, "'pr', 'diff'", mod.read_diff, self.gh(refusal='HTTP 502: Bad Gateway'), 'o/r', 9)
 
     def test_a_failed_fetch_is_raised_never_an_empty_diff(self):
         self.assertRaisesRegex(subprocess.CalledProcessError, "'fetch'", mod.read_diff, self.gh(merge_base='0' * 40), 'o/r', 9)
