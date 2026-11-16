@@ -1203,9 +1203,12 @@ def head_sources(repo, sha, unscreened):
     return pins, held, included
 
 
+_ONE_LINE = {ord(end): repr(end)[1:-1] for end in '\n\r\x0b\x0c\x1c\x1d\x1e\x85\u2028\u2029'}  # what splitlines() splits
+
+
 def _cannot_screen(unscreened, what, why):
     unscreened.append(what)
-    print(f'could not screen {what}: {why}', file=sys.stderr)
+    print(f'could not screen {what}: {why}'.translate(_ONE_LINE), file=sys.stderr)
 
 
 def main(argv=None):
@@ -1252,7 +1255,7 @@ def _screen(args):
                            + ''.join(f' {line}\n' for line in lines))
     found = findings(''.join(context) + diff_text, pins, None, held, reads_source)
     for path, line, text in found:
-        print(f'{path}:{line}: {text}')
+        print(f'{path}:{line}: {text}'.translate(_ONE_LINE))
     blind = 'misses every pin it cannot read as a literal from a source it reads (see --help)'
     summary = (f'{len(found)} candidate test line(s) holding or asserting a pinned workflow action or input, '
                "Dockerfile base image or tool version: judge each against the repository's own rule — no test "

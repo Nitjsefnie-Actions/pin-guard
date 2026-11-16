@@ -110,10 +110,12 @@ class DiffRows(unittest.TestCase):
 class Output(unittest.TestCase):
     def test_the_gh_seam_keeps_stdout_line_ends_and_a_failures_stderr(self):  # output() as check_pin_tests._gh runs gh
         with tempfile.TemporaryDirectory() as bin_dir:
-            pathlib.Path(bin_dir, 'gh').write_text('#!/bin/sh\nprintf "a\\rb\\r\\n"; printf "c\\rd" >&2; exit "$1"\n', encoding='utf-8')
+            pathlib.Path(bin_dir, 'gh').write_text('#!/bin/sh\nprintf "a\\rb\\r\\n"; printf "c\\rd" >&2\n'
+                                                   '[ "$1" = kill ] && kill -9 $$; exit "$1"\n', encoding='utf-8')
             os.chmod(os.path.join(bin_dir, 'gh'), 0o700)
             with mock.patch.dict(os.environ, {'PATH': bin_dir + os.pathsep + os.environ['PATH']}):
                 self.assertEqual(screen._gh('0'), 'a\rb\r\n')
-                with self.assertRaises(subprocess.CalledProcessError) as raised:
-                    screen._gh('3')
-        self.assertEqual((raised.exception.returncode, raised.exception.stdout, raised.exception.stderr), (3, 'a\rb\r\n', 'c\rd'))
+                for arg, code in (('3', 3), ('kill', -9)):  # an exit status, then a signal
+                    with self.assertRaises(subprocess.CalledProcessError) as raised:
+                        screen._gh(arg)
+                    self.assertEqual((raised.exception.returncode, raised.exception.stdout, raised.exception.stderr), (code, 'a\rb\r\n', 'c\rd'))
