@@ -14,8 +14,7 @@ them stay. This is a screen, not a verdict: it lists candidates; a reader
 judges each one against the rule.
 
 A test file is anything under a `tests`/`test`/`__tests__` directory or named
-`test_*`, `*_test.*`, `*.test.*` or `*.spec.*`; in one the diff shows only as binary, every head line
-counts as added. Its added lines are grouped into
+`test_*`, `*_test.*`, `*.test.*` or `*.spec.*`; a binary one's every head line counts as added. Its added lines are grouped into
 statements (an assertion or assignment's open brackets outside strings join
 the lines that follow, up to ten lines, extended through standalone string
 literals). A test file is screened against a pin source only when it reads that source: its text
@@ -733,13 +732,13 @@ def _enumerated_invariants(rows):
                 chunks.append(chunk)
             chunk = []
         elif kind != '-':
-            chunk += [(path, line, piece) for piece in text.split('\r')]  # Python ends a line at a lone \r too
+            chunk += [(path, line, piece) for piece in text.split('\r')]
     if chunk:
         chunks.append(chunk)
     parsed, assignments = [], {}
     for chunk in chunks:
         if any('\x00' in text for _, _, text in chunk):
-            continue  # no source holding a NUL parses, and retrying a binary file's every row is quadratic
+            continue  # never parses; retries go quadratic
         # A PR hunk may begin in the previous function, before a complete definition.
         starts = [0] + [i for i, (_, _, text) in enumerate(chunk) if i and text and not text[0].isspace()]
         for offset in starts:
@@ -1206,7 +1205,7 @@ def head_sources(repo, sha, unscreened):
     return pins, held, included
 
 
-_ONE_LINE = {ord(end): repr(end)[1:-1] for end in '\n\r\x0b\x0c\x1c\x1d\x1e\x85\u2028\u2029'}  # what splitlines() splits
+_ONE_LINE = {ord(end): repr(end)[1:-1] for end in '\n\r\x0b\x0c\x1c\x1d\x1e\x85\u2028\u2029'}
 
 
 def _cannot_screen(unscreened, what, why):
@@ -1247,7 +1246,7 @@ def _screen(args):
         return cache[path] is not None and couples(cache[path], kind, included if kind == 'gitlab-ci' else ())
 
     rows = list(diff_rows(diff_text))
-    binary = {p for p, _, k, _ in rows if k == '!'}  # its diff shows no line, so every head line is screened as added
+    binary = {p for p, _, k, _ in rows if k == '!'}
     context = []
     for path in dict.fromkeys(p for p, _, k, _ in rows if k in '+!' and is_test_file(p)):
         reads_source(path, 'workflow')
