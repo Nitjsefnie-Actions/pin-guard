@@ -10,15 +10,11 @@ name: actionlint
 #   actionlint — is this workflow WELL-FORMED? Schema, expression syntax,
 #   context availability (`github.event.review` on a push event),
 #   `runs-on` labels, and shellcheck over every `run:` block, which is where
-#   most real bugs live. It found `for i in $(seq 1 30)` with an unused `i`
-#   in tests.yml on its first run here.
+#   most real bugs live.
 #
 #   zizmor — is this workflow SAFE? Script injection through `${{ }}` in a
 #   `run:` block, over-broad `permissions:`, credential persistence after
-#   checkout, unpinned action references. Its first run flagged 39 findings,
-#   14 of them high: every action was tag-pinned rather than hash-pinned,
-#   every checkout left the job token in .git/config, and no workflow
-#   declared permissions at all.
+#   checkout, unpinned action references.
 #
 # Both tools are pinned by hash, not version alone: actionlint is verified
 # against its release checksum before it runs, and zizmor installs through
@@ -71,8 +67,8 @@ jobs:
       # rhysd/actionlint#654, which adds GitHub's documented `queue` key
       # under `concurrency` (single|max). Stock 1.7.12 is the latest
       # upstream release and false-reds the `queue: max` this repository
-      # brings in its own claim.yml (upstream informed via #657). Return to
-      # rhysd's own release once it ships the key.
+      # brings in its own claim.yml. Return to rhysd's own release once it
+      # ships the key.
       PIN_GUARD_ACTIONLINT_VERSION: 1.7.12-queue.1
       PIN_GUARD_ACTIONLINT_REPO: Nitjsefnie-OSC/actionlint
       # sha256 of actionlint_1.7.12-queue.1_linux_amd64.tar.gz, from the
