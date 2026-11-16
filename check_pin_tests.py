@@ -733,12 +733,12 @@ def _enumerated_invariants(rows):
             chunk += [(path, line, piece) for piece in text.split('\r')]
     if chunk:
         chunks.append(chunk)
-    parsed, assignments = [], {}
+    parsed, assignments, unfinished = [], {}, set()  # paths whose hunks outran the parse budget
     for chunk in chunks:
         nul = max((i for i, (_, _, text) in enumerate(chunk) if '\x00' in text), default=-1)  # nothing before it parses
         # A PR hunk may begin in the previous function, before a complete definition.
         starts = [i for i, (_, _, text) in enumerate(chunk) if i > nul and (not i or text and not text[0].isspace())]
-        found = first_tree(chunk, starts, _parse)
+        found = first_tree(chunk, starts, _parse, unfinished)
         if found:
             offset, tree = found
             path = chunk[offset][0]
@@ -758,7 +758,7 @@ def _enumerated_invariants(rows):
         found = set()
         resolver.block(tree.body, env, found)
         exempt.update((path, lines[line - 1][1]) for line in found)
-    return exempt
+    return {(path, line) for path, line in exempt if path not in unfinished}
 
 
 def _python_assertion(text, bindings):
