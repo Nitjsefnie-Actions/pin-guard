@@ -1388,7 +1388,7 @@ class WorkflowRunArtifactTests(unittest.TestCase):
         tails = importlib.import_module('py_tails')
         self.assertEqual([tails._fails_early(rows, 0) for rows in ([('t.py', 1, '    x = 1')] * 6, [('t.py', 1, t) for t in ('x = 1', 'y = 2', '\xa0', *['z = 3'] * 17)])], [False] * 2)  # dedent strips a margin, blanks a row
         self.assertEqual([[tails._joins, tails._decorates][d]([('t.py', 1, t)]) for t, d in (('x = 1', 0), ('from __future__ import barry_as_FLUFL', 0), ('@d', 1), ('# c', 1), ('x = 1', 1))], [True, False, True, False, False])
-        self.assertEqual([tails.first_tree([('t.py', 1, a), ('t.py', 2, 'x = 1')], [0, 1], mod._parse)[0] for a in ('@d', '  \\', '\\ ', '# c')], [1, 1, 1, 0])  # only a comment row takes the next row's verdict
+        self.assertEqual([tails.first_tree([('t.py', 1, r) for r in rows], starts, mod._parse)[0] for rows, starts in ((('@d', 'x = 1'), [0, 1]), (('  \\', 'x = 1'), [0, 1]), (('\\ ', 'x = 1'), [0, 1]), (('# c', 'x = 1'), [0, 1]), (('# c', '\xa0# x', 'x = 1'), [0, 2]), (('# c', '    x = 1', 'y = 2'), [0, 2]), (('# c', ')', 'x = 1'), [0, 1, 2]))], [1, 1, 1, 0, 2, 2, 2])  # only a comment row takes the next row's verdict
 
     def test_a_hunk_no_tail_of_parses_is_parsed_in_input_linear_in_its_size(self):  # a whole-tail parse per row is quadratic
         sizes, real = [], compile

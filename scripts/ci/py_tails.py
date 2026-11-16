@@ -13,8 +13,8 @@ _CLAUSE = re.compile(r'(?:else|elif|except|finally)\b')
 def first_tree(chunk, starts, parse):
     code = [len(chunk)] * (len(chunk) + 1)  # the first row at or after each with a token
     for row in range(len(chunk) - 1, -1, -1):
-        text = chunk[row][2].lstrip()  # an indented \\ indents its joined line
-        code[row] = row if text.strip() and text[0] != '#' and chunk[row][2] != '\\' else code[row + 1]
+        text = chunk[row][2]  # an indented \\ indents its joined line
+        code[row] = code[row + 1] if text.isspace() or text.lstrip(' \t\x0c')[:1] in ('', '#') or text == '\\' else row
     views, made, pending, opening, known = [], False, [], set(starts), set()
     for offset in starts:  # view: scan from a failing start, next row, last start, statement start
         for view in views:
@@ -38,8 +38,12 @@ def first_tree(chunk, starts, parse):
             except SyntaxError:
                 whole = True
             else:
-                first = (pending + [offset])[0]
-                return first, tree if first == offset else parse(textwrap.dedent('\n'.join(text for _, _, text in chunk[first:])))
+                for first in pending:
+                    try:
+                        return first, parse(textwrap.dedent('\n'.join(text for _, _, text in chunk[first:])))
+                    except SyntaxError:
+                        pass
+                return offset, tree
         pending = []
         if deferred:
             known.add(code[offset])
