@@ -121,7 +121,7 @@ screen's own suite whose path is only a name bound elsewhere (`WF = '...'`,
 then `open(WF)`). It also lists a
 quoted version that merely equals a pinned one, for the reader to judge. So an
 empty list is not a proof. A pin source it cannot fetch or parse, or a test file
-it cannot fetch, is named on stderr as `could not screen <path>: <why>` and is
+it cannot fetch or the diff shows only as binary, is named on stderr as `could not screen <path>: <why>` and is
 never counted as screened. Test fragments that ast cannot parse use the text
 matcher.
 
@@ -144,7 +144,7 @@ import warnings
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), 'scripts', 'ci'))
 
 from pin_sources import CannotScreen, dockerfile_pins, gitlab_ci, manifest_pins, source_kind  # pylint: disable=unused-import
-from pr_diff import diff_rows, read_diff
+from pr_diff import diff_rows, output, read_diff
 
 
 def _parse(text):
@@ -732,7 +732,7 @@ def _enumerated_invariants(rows):
                 chunks.append(chunk)
             chunk = []
         elif kind != '-':
-            chunk.append((path, line, text))
+            chunk += [(path, line, piece) for piece in text.split('\r')]  # Python ends a line at a lone \r too
     if chunk:
         chunks.append(chunk)
     parsed, assignments = [], {}
@@ -744,8 +744,8 @@ def _enumerated_invariants(rows):
                 tree = _parse(textwrap.dedent('\n'.join(text for _, _, text in chunk[offset:])))
             except SyntaxError:
                 continue
-            path, start, _ = chunk[offset]
-            parsed.append((path, start, tree))
+            path = chunk[offset][0]
+            parsed.append((path, chunk[offset:], tree))
             for statement in tree.body:
                 if isinstance(statement, ast.Assign) and not chunk[offset + statement.lineno - 1][2][:1].isspace():
                     for target in statement.targets:
@@ -757,11 +757,11 @@ def _enumerated_invariants(rows):
         env = modules.setdefault(path, {})
         resolver.aliases(body, env)
     exempt = set()
-    for path, start, tree in parsed:
+    for path, lines, tree in parsed:
         env = modules.get(path, {}).copy()
         found = set()
         resolver.block(tree.body, env, found)
-        exempt.update((path, start + line - 1) for line in found)
+        exempt.update((path, lines[line - 1][1]) for line in found)
     return exempt
 
 
@@ -1159,8 +1159,7 @@ def findings(diff_text, pinned=(), reads_workflows=None, literals=None, reads_so
 
 
 def _gh(*args):
-    return subprocess.run(['gh', *args], capture_output=True, text=True, encoding='utf-8',
-                          errors='replace', check=True).stdout
+    return output(['gh', *args])
 
 
 def head_sources(repo, sha, unscreened):
@@ -1241,11 +1240,14 @@ def _screen(args):
                 _cannot_screen(unscreened, path, (exc.stderr or str(exc)).strip())
         return cache[path] is not None and couples(cache[path], kind, included if kind == 'gitlab-ci' else ())
 
+    rows = list(diff_rows(diff_text))
+    for path in dict.fromkeys(p for p, _, k, _ in rows if k == '!' and is_test_file(p)):
+        _cannot_screen(unscreened, path, 'the diff shows it only as binary')
     context = []
-    for path in dict.fromkeys(p for p, _, k, _ in diff_rows(diff_text) if k == '+' and is_test_file(p)):
+    for path in dict.fromkeys(p for p, _, k, _ in rows if k == '+' and is_test_file(p)):
         reads_source(path, 'workflow')
         if cache[path] is not None:
-            lines = cache[path].splitlines()
+            lines = cache[path].removesuffix('\n').split('\n')
             context.append(f'+++ b/{path}\n@@ -1,{len(lines)} +1,{len(lines)} @@\n'
                            + ''.join(f' {line}\n' for line in lines))
     found = findings(''.join(context) + diff_text, pins, None, held, reads_source)

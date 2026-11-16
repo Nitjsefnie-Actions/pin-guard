@@ -638,6 +638,23 @@ class Main(unittest.TestCase):
         self.assertEqual(out, ['tests/test_pkg.py:1: assert v == "1.2.3"'])
         self.assertEqual(err, ['could not screen Dockerfile: HTTP 404: Not Found', self.SUMMARY_FOUND.format(1)])
 
+    def test_a_binary_test_file_is_named_and_a_quoted_one_screened(self):
+        quoted = diff('tests/t\u00e9st_x.py', 'assert v == "1.2.3"').replace('+++ b/tests/t\u00e9st_x.py', '+++ "b/tests/t\\303\\251st_x.py"')
+        binary = ''.join(f'diff --git a/{p} b/{p}\nBinary files /dev/null and b/{p} differ\n' for p in ('tests/test_b.py', 'logo.png'))
+        code, out, err, _ = self.run_main(quoted + binary, {'package.json': '{"dependencies": {"a": "1.2.3"}}'},
+                                          {'tests/t\u00e9st_x.py': 'PKG = json.loads((ROOT / "package.json").read_text())\n'})
+        self.assertEqual((code, out), (2, ['tests/t\u00e9st_x.py:1: assert v == "1.2.3"']))
+        self.assertEqual(err, ['could not screen tests/test_b.py: the diff shows it only as binary', self.SUMMARY_FOUND.format(1)])
+
+    def test_head_context_numbers_lines_as_git_does(self):  # a form feed ends a line for str.splitlines() alone
+        head = ('x = 0  # \x0c\nPATHS = (ROOT / ".github/workflows").glob("*.yml")\nfor candidate in PATHS:\n'
+                '    parsed = yaml.safe_load(candidate.read_text())\n    for job in parsed["jobs"].values():\n'
+                '        for entry in job.get("steps", []):\n            assert entry["with"]["persist-credentials"] is False\n')
+        glob, line = '(ROOT / ".github/workflows").glob("*.yml")', head.split('\n')[6]
+        for paths, verdict in ((glob, (0, [])), ('[ROOT / ".github/workflows/ci.yml"]', (1, [f'tests/test_wf.py:7: {line.strip()}']))):
+            patch = f'+++ b/tests/test_wf.py\n@@ -6,0 +7 @@\n+{line}\n'
+            self.assertEqual(self.run_main(patch, {}, {'tests/test_wf.py': head.replace(glob, paths)})[:2], verdict)
+
     def test_workflow_sha_pins_still_come_from_the_head(self):
         wf = f'      - uses: o/claim@{SHA} # v1.0.0\n      - run: pip install ruff==0.8.4\n'
         code, out, _, _ = self.run_main(
@@ -1457,6 +1474,12 @@ class WorkflowRunArtifactTests(unittest.TestCase):
         self.assert_listed('PATHS = (ROOT / ".github/workflows").glob("*.yml")\n'
                            'def test_all():\n    PATHS = [ROOT / ".github/workflows/ci.yml"]\n'
                            + '\n'.join('    ' + s for s in self.invariant('PATHS').splitlines()))
+
+    def test_a_lone_carriage_return_moves_no_verdict_off_its_line(self):
+        enumerated = 'B = 0\rPATHS = (ROOT / ".github/workflows").glob("*.yml")\n'
+        for prefix, listed in ((enumerated, []), (enumerated.replace('(ROOT / ".github/workflows").glob("*.yml")', '[]'), [6])):
+            rows = self.invariant('PATHS', prefix).rstrip('\n').split('\n')
+            self.assertEqual([n for _, n, _ in mod.findings(diff('tests/test_workflow.py', *rows), (), lambda p: True)], listed)
 
     def test_pattern_bindings_and_filename_alias_filters(self):
         source = self.invariant('(ROOT / ".github/workflows").glob(PATTERN)', 'PATTERN = "*.yml"\n')
