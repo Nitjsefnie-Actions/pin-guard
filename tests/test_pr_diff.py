@@ -65,7 +65,7 @@ class ReadDiff(unittest.TestCase):
 
     def test_a_refused_diff_is_the_merge_base_to_head_diff_with_the_heads_files(self):
         head, diff_text, contents = mod.read_diff(self.gh(), 'o/r', 9)
-        self.assertEqual([(p, n, t) for p, n, k, t in screen._lines(diff_text) if k == '+'],
+        self.assertEqual([(p, n, t) for p, n, k, t in mod.diff_rows(diff_text) if k == '+'],
                          [('a.py', 2, 'b'), ('new.py', 1, 'n')])
         self.assertEqual((head, contents), (self.head, {'a.py': 'a\nb\n', 'moved.py': 'g\n', 'new.py': 'n\n'}))
 
