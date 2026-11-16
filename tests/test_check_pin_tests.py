@@ -1420,6 +1420,13 @@ class WorkflowRunArtifactTests(unittest.TestCase):
             setattr(mod, '_parse', saved)
         self.assertEqual([text for text in parsed if '\x00' in text and '\n' in text], [])  # a statement alone may hold one
 
+    def test_a_hunk_no_tail_of_parses_is_parsed_in_input_linear_in_its_size(self):  # a whole-tail parse per row is quadratic
+        texts = [f'{n}, {n}' for n in range(500)] + ['total rows'] + [f'- item {n}' for n in range(500)]
+        sizes, real = [], compile
+        with mock.patch('builtins.compile', lambda source, *args, **kwargs: sizes.append(len(source)) or real(source, *args, **kwargs)):
+            self.assertEqual(mod._enumerated_invariants([('tests/f.yml', 1, '@', '')] + [('tests/f.yml', 1, '+', t) for t in texts]), set())
+        self.assertLess(sum(sizes), 5 * len('\n'.join(texts)))
+
     def test_pattern_bindings_and_filename_alias_filters(self):
         source = self.invariant('(ROOT / ".github/workflows").glob(PATTERN)', 'PATTERN = "*.yml"\n')
         self.assertEqual(self.screen(source), [])
