@@ -1,7 +1,7 @@
 {
   ".github/dependabot.yml": [
-    931,
-    1347
+    851,
+    1267
   ],
   ".github/scripts/diff_coverage.py": [
     4662,
@@ -12,12 +12,12 @@
     2664
   ],
   ".github/workflows/actionlint.yml": [
-    3630,
-    5633
+    3365,
+    5368
   ],
   ".github/workflows/audit.yml": [
-    3604,
-    5610
+    3505,
+    5511
   ],
   ".github/workflows/codeql.yml": [
     1770,
