@@ -21,17 +21,17 @@ def read_diff(gh, repo, pr) -> tuple[str, str, dict]:
     base = json.loads(gh('pr', 'view', str(pr), '-R', repo, '--json', 'baseRefOid'))['baseRefOid']
     merge_base = json.loads(gh('api', f'repos/{repo}/compare/{base}...{head}?per_page=1'))['merge_base_commit']['sha']
     auth = base64.b64encode(f'x-access-token:{gh("auth", "token").strip()}'.encode()).decode()
-    # No ambient GIT_* variable or config shapes the diff; the token rides in env, never argv.
+    # No ambient GIT_* variable, config or attributes file shapes the diff; the token rides in env, never argv.
     env = {name: value for name, value in os.environ.items() if not name.startswith('GIT_')}
-    env.update({'GIT_CONFIG_NOSYSTEM': '1', 'GIT_CONFIG_GLOBAL': os.devnull, 'GIT_TERMINAL_PROMPT': '0',
-                'GIT_CONFIG_COUNT': '2', 'GIT_CONFIG_KEY_0': 'http.extraHeader',
+    env.update({'GIT_CONFIG_NOSYSTEM': '1', 'GIT_CONFIG_GLOBAL': os.devnull, 'GIT_ATTR_NOSYSTEM': '1',
+                'GIT_TERMINAL_PROMPT': '0', 'GIT_CONFIG_COUNT': '3', 'GIT_CONFIG_KEY_0': 'http.extraHeader',
                 'GIT_CONFIG_VALUE_0': f'Authorization: basic {auth}', 'GIT_CONFIG_KEY_1': 'maintenance.auto',
-                'GIT_CONFIG_VALUE_1': 'false'})
+                'GIT_CONFIG_VALUE_1': 'false', 'GIT_CONFIG_KEY_2': 'core.attributesFile', 'GIT_CONFIG_VALUE_2': os.devnull})
     with tempfile.TemporaryDirectory() as bare:
         def git(*args):
             return subprocess.run(['git', '-C', bare, *args], capture_output=True, text=True, encoding='utf-8',
                                   errors='replace', check=True, env=env).stdout
-        git('init', '-q', '--bare')
+        git('init', '-q', '--bare', '--template=')
         git('fetch', '-q', '--no-tags', '--depth=1', '--filter=blob:none', REMOTE.format(repo), merge_base, head)
         diff_text = git('diff', '--no-ext-diff', '--no-textconv', merge_base, head)
         raw = git('diff', '--raw', '-z', '--no-abbrev', '--no-renames', merge_base, head).split('\0')[:-1]

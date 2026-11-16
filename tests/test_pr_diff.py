@@ -19,7 +19,9 @@ mod = importlib.import_module('pr_diff')
 class ReadDiff(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        root = cls.enterClassContext(tempfile.TemporaryDirectory())
+        root = cls.root = cls.enterClassContext(tempfile.TemporaryDirectory())
+        pathlib.Path(root, 'git').mkdir()
+        pathlib.Path(root, 'git', 'attributes').write_text('* -diff\n', encoding='utf-8')  # a global attributes file
         repo, cls.remote = pathlib.Path(root, 'o', 'r'), f'file://{root}/{{}}'
         env = {**os.environ, 'GIT_CONFIG_GLOBAL': os.devnull, 'GIT_CONFIG_NOSYSTEM': '1', 'GIT_AUTHOR_NAME': 't',
                'GIT_AUTHOR_EMAIL': 't@example.com', 'GIT_COMMITTER_NAME': 't', 'GIT_COMMITTER_EMAIL': 't@example.com'}
@@ -53,13 +55,13 @@ class ReadDiff(unittest.TestCase):
 
         def fake(*args):
             if answers[args] is None:
-                raise subprocess.CalledProcessError(1, ['gh'], stderr=refusal)
+                raise subprocess.CalledProcessError(1, ['gh', refusal], stderr=refusal)
             return answers[args]
         return fake
 
-    def setUp(self):  # every fetch also runs under an ambient config that would drop the diff's b/ prefix
+    def setUp(self):  # every fetch also runs under ambient config and attributes that would hide the added lines
         self.enterContext(mock.patch.object(mod, 'REMOTE', self.remote))
-        self.enterContext(mock.patch.dict(os.environ, {'GIT_CONFIG_PARAMETERS': "'diff.noprefix'='true'"}))
+        self.enterContext(mock.patch.dict(os.environ, {'GIT_CONFIG_PARAMETERS': "'diff.noprefix'='true'", 'XDG_CONFIG_HOME': self.root}))
 
     def test_a_refused_diff_is_the_merge_base_to_head_diff_with_the_heads_files(self):
         head, diff_text, contents = mod.read_diff(self.gh(), 'o/r', 9)
@@ -69,9 +71,7 @@ class ReadDiff(unittest.TestCase):
 
     def test_a_served_diff_is_kept_and_any_other_refusal_raised_without_a_fetch(self):
         self.assertEqual(mod.read_diff(self.gh(served='diff'), 'o/r', 9), (self.head, 'diff', {}))
-        with self.assertRaises(subprocess.CalledProcessError) as caught:
-            mod.read_diff(self.gh(refusal='HTTP 502: Bad Gateway'), 'o/r', 9)
-        self.assertEqual(caught.exception.stderr, 'HTTP 502: Bad Gateway')
+        self.assertRaisesRegex(subprocess.CalledProcessError, 'HTTP 502', mod.read_diff, self.gh(refusal='HTTP 502: Bad Gateway'), 'o/r', 9)
 
     def test_a_failed_fetch_is_raised_never_an_empty_diff(self):
         self.assertRaisesRegex(subprocess.CalledProcessError, "'fetch'", mod.read_diff, self.gh(merge_base='0' * 40), 'o/r', 9)
