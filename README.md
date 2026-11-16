@@ -37,7 +37,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: Nitjsefnie-Actions/pin-guard@494a900c1ca4167aa9f8839cfb963794b4b7da0d # v1.1.0
+      - uses: Nitjsefnie-Actions/pin-guard@fa61bdcdb89b3f4aa46530360401fb4ce0d88e46 # v1.1.2
         with:
           fail-on-candidates: 'false'
           github-token: ${{ github.token }}
