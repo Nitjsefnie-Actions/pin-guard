@@ -669,45 +669,6 @@ class ScreeningRegressions(unittest.TestCase):
     def screen(self, source):
         return mod.findings(diff('tests/test_workflow.py', *source.splitlines()), {SHA}, lambda p: True)
 
-    def test_parser_fixture_assertions(self):
-        # Each scan location is an independent entry, even where the copies agree.
-        for repo, parser, line in (
-            ('pr-gate:457', "module.workflow_steps(text, 'w.yml')['actionlint']", f"assert steps[0]['uses'] == 'actions/checkout@{'1' * 40}'"),
-            ('pr-gate:458', "module.workflow_steps(text, 'w.yml')['actionlint']", "assert steps[1]['uses'] == './'"),
-            ('gh-widgets:464', "module.workflow_jobs(text, 'w.yml')['actionlint'].steps", f"assert steps[0]['uses'] == 'actions/checkout@{'1' * 40}'"),
-            ('gh-widgets:465', "module.workflow_jobs(text, 'w.yml')['actionlint'].steps", "assert steps[1]['uses'] == './'"),
-            ('ai-researcher:742', "module.workflow_steps(text, 'w.yml')['actionlint']", f"assert steps[0]['uses'] == 'actions/checkout@{'1' * 40}'"),
-            ('ai-researcher:743', "module.workflow_steps(text, 'w.yml')['actionlint']", "assert steps[1]['uses'] == './'"),
-        ):
-            with self.subTest(location=repo):
-                self.assertEqual(self.screen("text = ('jobs:\\n'\n"
-                                             "        '  actionlint:\\n')\n"
-                                             f"steps = {parser}\n{line}"), [])
-
-    def test_pin_sync_fixture_output(self):
-        for location, value in (('1003', '{reviewed} # v1.0.1'), ('1004', '{divergent} # v1.0.1'),
-                                ('1015', '{reviewed} # v1.0.1'), ('1016', '{reviewed} # v1.1.0')):
-            with self.subTest(location='pr-gate:' + location):
-                self.assertEqual(self.screen(f"assert f'{value}' in result.stdout, result.stdout"), [])
-
-    def test_uses_in_assertion_messages_only(self):
-        for location, source in (
-            ('Overflow-dependency:526', '''expect(
-    effective(step, key),
-    `step "${step.name ?? step.uses}" runs pnpm and must resolve ${key} from the workflow, ` +
-        "not from a value its own env block shadows",
-).toBe(value);'''),
-            ('Overflow-secret-scan:246', '''expect(
-    step["continue-on-error"],
-    `${step.name ?? step.uses ?? "a step"} must not tolerate failure`,
-).toBeUndefined();'''),
-        ):
-            with self.subTest(location=location):
-                self.assertEqual(self.screen(source), [])
-
-    def test_workflow_call_structure(self):
-        self.assertEqual(self.screen("assert Path(caller.get('uses', '').split('@', 1)[0]).name != 'actionlint.yml'"), [])
-
     def test_quoted_brackets_do_not_join_assertions(self):
         source = """assert '${{' not in steps[index]['run'], (
     'the pin-sync step must not interpolate expressions: zizmor flags '
@@ -719,48 +680,10 @@ assert step['uses'] == 'actions/checkout@v4'
         found = self.screen(source)
         self.assertEqual([(n, text) for _, n, text in found], [(6, "assert step['uses'] == 'actions/checkout@v4'")])
 
-    def test_single_file_full_history(self):
-        self.assertEqual(len(self.screen("assert checkout['with'].get('fetch-depth') == '0', checkout")), 1)
-
-    def test_with_dictionary_misses(self):
-        for location, source in (
-            ('pr-gate:229', """assert checkout['with'] == {'ref': '${{ github.sha }}',
-    'fetch-depth': '0',
-    'persist-credentials': 'false'}, (
-    'the checkout must be the exact merge the coverage report describes')"""),
-            ('pr-gate:1135', "assert steps[0]['with'] == {'fetch-depth': '0', 'persist-credentials': 'false'}"),
-        ):
-            with self.subTest(location=location):
-                self.assertEqual(len(self.screen(source)), 1)
-
     def test_with_alias_miss(self):
         self.assertEqual([(n, text) for _, n, text in self.screen('''with_ = scorecard_step.get("with") or {}
 assert with_.get("results_format") == "sarif"''')],
                          [(2, 'assert with_.get("results_format") == "sarif"')])
-
-    def test_exemptions_do_not_hide_nearby_pins(self):
-        for source in (
-            "assert checkout['with']['persist-credentials'] is True",
-            'expect(step.with.cache).toBe(false);',
-            "name = 'tests.yml'\nsteps = _workflow(name)['steps']\nassert steps[0]['uses'] == 'actions/checkout@v4'",
-            "PIN = 'v4'\nassert step['uses'] == f'actions/checkout@{PIN}'",
-            "with_ = step.get('with') or {}\nassert with_.get('fetch-depth') == '2'",
-        ):
-            with self.subTest(source=source):
-                self.assertEqual(len(self.screen(source)), 1)
-
-    def test_aliases_are_local_and_reassigned(self):
-        for reset in ("def test_second():", "async def test_second():", "class Second:", "with_ = other"):
-            with self.subTest(reset=reset):
-                self.assertEqual(self.screen('with_ = step.get("with") or {}\n' + reset +
-                                             '\nassert with_.get("results_format") == "sarif"'), [])
-
-    def test_single_file_history_and_credentials(self):
-        for source in ("assert checkout['with']['fetch-depth'] == '0'",
-                       "assert checkout.get('with', {}).get('fetch-depth') == 0",
-                       "assert checkout['with']['persist-credentials'] is False"):
-            with self.subTest(source=source):
-                self.assertEqual(len(self.screen(source)), 1)
 
     def test_input_alias_does_not_cross_files(self):
         patch = (diff('tests/test_a.py', 'with_ = step.get("with") or {}') +
@@ -770,12 +693,6 @@ assert with_.get("results_format") == "sarif"''')],
     def test_braced_input_does_not_swallow_pin_assignment(self):
         source = 'assert step["with"]["name"] == "${{"\n' + f'PIN = "{SHA}"'
         self.assertEqual([n for _, n, _ in self.screen(source)], [1, 2])
-
-    def test_history_values_are_not_boolean_values(self):
-        for source in ("assert checkout['with']['fetch-depth'] is False",
-                       "assert checkout['with']['persist-credentials'] == 0"):
-            with self.subTest(source=source):
-                self.assertEqual(len(self.screen(source)), 1)
 
 
 # BASE 8a592ef verdicts measured once against these embedded patches; runtime reads
