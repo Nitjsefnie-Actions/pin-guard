@@ -486,6 +486,10 @@ class DiffableLines(unittest.TestCase):
         _, got = self.counted([diff_file('tests/on.py', *patch)])
         self.assertEqual(got, {('tests/on.py', 2), ('tests/on.py', 3), ('tests/on.py', 12)})
 
+    def test_a_lone_carriage_return_stays_in_its_added_line(self):
+        _, got = self.counted([diff_file('t.py', '@@ -0,0 +1,3 @@', '+x = 1\r+junk', '+y = 2', '+z = 3')])
+        self.assertEqual(got, {('t.py', 1), ('t.py', 2), ('t.py', 3)})
+
     def test_a_file_without_a_patch_yields_no_anchors(self):
         _, got = self.counted([{'filename': 'big.lock'}])
         self.assertEqual(got, set())
