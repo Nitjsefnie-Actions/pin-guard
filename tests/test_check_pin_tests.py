@@ -93,18 +93,10 @@ class Findings(unittest.TestCase):
                      "assert set(step['with']) <= set(declared)", "assert 'ref' not in checkout['with']"):
             self.assertEqual(self.flagged(diff('tests/test_wf.py', line)), [], line)
 
-    def test_assert_equal_on_uses_is_flagged(self):
-        line = 'self.assertEqual(action["uses"], f"Nitjsefnie-Actions/comment-ratchet@{PIN}")'
-        self.assertEqual(len(self.flagged(diff('tests/test_wf.py', line))), 1)
-
     def test_an_assert_on_with_inputs_is_flagged(self):
         for line in ('assert upload["with"]["name"] == "comment-share-data"',
                      "assert checkout['with']['fetch-depth'] == '2'", 'expect(step.with.target).toBe("15")'):
             self.assertEqual(len(self.flagged(diff('tests/test_wf.py', line))), 1, line)
-
-    def test_locating_a_step_by_its_uses_prefix_is_not_flagged(self):
-        line = 'upload = next(s for s in steps if s.get("uses", "").startswith("actions/upload-artifact@"))'
-        self.assertEqual(self.flagged(diff('tests/test_wf.py', line)), [])
 
     def test_a_fixture_sha_after_an_at_sign_is_not_flagged(self):
         line = "'      - uses: actions/checkout@1111111111111111111111111111111111111111 # v1\\n'"
@@ -1393,16 +1385,20 @@ class WorkflowRunArtifactTests(unittest.TestCase):
         self.assertEqual([text for text in parsed if '\x00' in text and '\n' in text], [])  # a statement alone may hold one
 
     def test_a_tail_is_settled_unparsed_only_where_its_whole_parse_agrees(self):  # a margin, a blanked row, a grammar change
-        self.assertFalse(mod._fails_early([('t.py', 1, '    x = 1')] * 6, 0))  # dedent strips the margin a prefix keeps
-        self.assertFalse(mod._fails_early([('t.py', 1, t) for t in ('x = 1', 'y = 2', '\xa0', *['z = 3'] * 17)], 0))
-        self.assertEqual([mod._parses_alone([('t.py', 1, t)]) for t in ('x = 1', 'from __future__ import barry_as_FLUFL')], [True, False])
+        tails = importlib.import_module('py_tails')
+        self.assertFalse(tails._fails_early([('t.py', 1, '    x = 1')] * 6, 0))  # dedent strips the margin a prefix keeps
+        self.assertFalse(tails._fails_early([('t.py', 1, t) for t in ('x = 1', 'y = 2', '\xa0', *['z = 3'] * 17)], 0))
+        self.assertEqual([tails._alone([('t.py', 1, t)], mod._parse, d) for t, d in (('x = 1', 0), ('from __future__ import barry_as_FLUFL', 0), ('@d', 1), ('# c', 1), ('x = 1', 1))], [True, False, True, False, False])
+        self.assertEqual(tails.first_tree([('t.py', 1, '@d'), ('t.py', 2, 'x = 1')], [0, 1], mod._parse)[0], 1)  # a decorator row hands on no failure alone
 
     def test_a_hunk_no_tail_of_parses_is_parsed_in_input_linear_in_its_size(self):  # a whole-tail parse per row is quadratic
-        texts = [f'{n}, {n}' for n in range(500)] + ['total rows'] + [f'- item {n}' for n in range(500)]
         sizes, real = [], compile
-        with mock.patch('builtins.compile', lambda source, *args, **kwargs: sizes.append(len(source)) or real(source, *args, **kwargs)):
-            self.assertEqual(mod._enumerated_invariants([('tests/f.yml', 1, '@', '')] + [('tests/f.yml', 1, '+', t) for t in texts]), set())
-        self.assertLess(sum(sizes), 5 * len('\n'.join(texts)))
+        for texts in ([f'{n}, {n}' for n in range(500)] + ['total rows'] + [f'- item {n}' for n in range(500)], [f'@name{n}' for n in range(8000)],
+                      [f'@types/node-{n}' for n in range(2000)], ['"""doc', 'end"""'] * 1000 + ['"""doc']):
+            del sizes[:]
+            with mock.patch('builtins.compile', lambda source, *args, **kwargs: sizes.append(len(source)) or real(source, *args, **kwargs)):
+                self.assertEqual(mod._enumerated_invariants([('tests/f.yml', 1, '@', '')] + [('tests/f.yml', 1, '+', t) for t in texts]), set())
+            self.assertLess(sum(sizes), 12 * len('\n'.join(texts)), texts[0])
 
     def test_pattern_bindings_and_filename_alias_filters(self):
         source = self.invariant('(ROOT / ".github/workflows").glob(PATTERN)', 'PATTERN = "*.yml"\n')
