@@ -1403,13 +1403,16 @@ class WorkflowRunArtifactTests(unittest.TestCase):
             rows = self.invariant('PATHS', prefix).rstrip('\n').split('\n')
             self.assertEqual([n for _, n, _ in mod.findings(diff('tests/test_workflow.py', *rows), (), lambda p: True)], listed)
 
-    def test_a_chunk_holding_a_nul_byte_is_never_parsed(self):  # retrying a binary file's every row is quadratic
-        saved = mod._parse
-        setattr(mod, '_parse', None)
+    def test_rows_after_a_nul_byte_still_bind_and_no_parse_retries_through_it(self):  # retries from every binary row are quadratic
+        patch = diff('tests/test_workflow.py', 'PATHS = (ROOT / ".github/workflows").glob("*.yml")') + '@@ -10,0 +10,4 @@\n+X = "\x00"\n+Z = 1\n+Y = "\x00"\n'
+        patch += '+PATHS = [ROOT / ".github/workflows/ci.yml"]\n@@ -20,0 +20,5 @@\n' + ''.join(f'+{r}\n' for r in self.invariant('PATHS').rstrip('\n').split('\n'))
+        parsed, saved = [], mod._parse
+        setattr(mod, '_parse', lambda text: parsed.append(text) or saved(text))
         try:
-            self.assertEqual(mod._enumerated_invariants(list(mod.diff_rows('+++ b/t.py\n@@ -0,0 +1,2 @@\n+\x00\n+x = 1\n'))), set())
+            self.assertEqual([n for _, n, _ in mod.findings(patch, (), lambda p: True)], [24])
         finally:
             setattr(mod, '_parse', saved)
+        self.assertEqual([text for text in parsed if '\x00' in text and '\n' in text], [])  # a statement alone may hold one
 
     def test_pattern_bindings_and_filename_alias_filters(self):
         source = self.invariant('(ROOT / ".github/workflows").glob(PATTERN)', 'PATTERN = "*.yml"\n')

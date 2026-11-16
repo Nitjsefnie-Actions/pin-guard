@@ -737,10 +737,9 @@ def _enumerated_invariants(rows):
         chunks.append(chunk)
     parsed, assignments = [], {}
     for chunk in chunks:
-        if any('\x00' in text for _, _, text in chunk):
-            continue  # never parses; retries go quadratic
+        nul = max((i for i, (_, _, text) in enumerate(chunk) if '\x00' in text), default=-1)  # nothing before it parses
         # A PR hunk may begin in the previous function, before a complete definition.
-        starts = [0] + [i for i, (_, _, text) in enumerate(chunk) if i and text and not text[0].isspace()]
+        starts = [i for i, (_, _, text) in enumerate(chunk) if i > nul and (not i or text and not text[0].isspace())]
         for offset in starts:
             try:
                 tree = _parse(textwrap.dedent('\n'.join(text for _, _, text in chunk[offset:])))
