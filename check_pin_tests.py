@@ -138,6 +138,7 @@ import subprocess
 import sys
 import textwrap
 import warnings
+from urllib.parse import quote
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), 'scripts', 'ci'))
 
@@ -1193,7 +1194,7 @@ def _screen(args):
     def reads_source(path, kind):
         if path not in cache:
             try:
-                cache[path] = _gh('api', f'repos/{args.repo}/contents/{path}?ref={head}', '-H',
+                cache[path] = _gh('api', f'repos/{args.repo}/contents/{quote(path)}?ref={head}', '-H',
                                   'Accept: application/vnd.github.raw')
             except subprocess.CalledProcessError as exc:
                 cache[path] = None
