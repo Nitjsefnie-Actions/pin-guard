@@ -60,5 +60,6 @@ scripts/ci/*
 !scripts/ci/aggregate_gate.py
 !scripts/ci/pin_sources.py
 !scripts/ci/pr_diff.py
+!scripts/ci/py_tails.py
 !pytest.ini
 !requirements-test.txt
