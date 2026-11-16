@@ -86,6 +86,12 @@ class DiffRows(unittest.TestCase):
                 self.assertEqual(list(mod.diff_rows(f'+++ b/t.py\r\n@@ -0,0 +1,2 @@\r\n+x = 1{end}assert v\r\n+y\n')),
                                  [('t.py', 1, '@', ''), ('t.py', 1, '+', f'x = 1{end}assert v'), ('t.py', 2, '+', 'y')])
 
+    def test_a_row_is_a_header_only_past_the_rows_its_hunk_counts(self):
+        text = ('diff --git a/t.py b/t.py\n--- a/t.py\n+++ b/t.py\n@@ -1,2 +1,2 @@\n+++ b\n--- a\n+++ c\n--- d\n'
+                '--- a/v\n+++ b/v\n@@ -1 +1 @@\n--- q\n+++ w\n')
+        self.assertEqual(list(mod.diff_rows(text)), [('t.py', 1, '@', ''), ('t.py', 1, '+', '++ b'), ('t.py', None, '-', '-- a'),
+                                                     ('t.py', 2, '+', '++ c'), ('t.py', None, '-', '-- d'), ('v', 1, '@', ''), ('v', None, '-', '-- q'), ('v', 1, '+', '++ w')])
+
     def test_a_quoted_or_tabbed_name_is_read_as_named(self):
         for target, path in (('"b/\\a\\b\\t\\n\\v\\f\\r\\"\\\\\\303\\251.py"', '\a\b\t\n\v\f\r"\\é.py'),
                              ('b/a b.py\t', 'a b.py'), ('"b/t \\303\\251.py"\t', 't é.py')):

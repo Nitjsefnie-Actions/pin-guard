@@ -10,7 +10,7 @@ import subprocess
 import tempfile
 
 REMOTE = 'https://github.com/{}.git'
-_HUNK = re.compile(r'^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@')
+_HUNK = re.compile(r'^@@ -\d+(?:,(\d+))? \+(\d+)(?:,(\d+))? @@')
 _ESCAPES = dict(zip(b'abtnvfr"\\', b'\a\b\t\n\v\f\r"\\'))
 
 
@@ -62,31 +62,32 @@ def _path(name):
 
 def diff_rows(diff_text):
     """Yield hunk rows as (path, line, kind, text); '@' marks a hunk, '!' a binary file. Rows end at \\n alone."""
-    path, line, renamed = None, 0, None
+    path, line, renamed, old, new = None, 0, None, 0, 0  # old, new: removed and added rows the hunk still counts
     for raw in re.split(r'\r?\n', diff_text):
-        if raw.startswith('+++ '):
+        if raw.startswith('+++ ') and new <= 0:
             target = _path(raw[4:])
             path = target[2:] if target.startswith('b/') else None
             continue
         if raw.startswith('diff --git'):
-            renamed = None
+            renamed, old, new = None, 0, 0
         if raw.startswith('rename to '):
             renamed = _path(raw[len('rename to '):])
         if raw.startswith('Binary files ') and not raw.endswith(' and /dev/null differ'):
             sides = raw[len('Binary files '):-len(' differ')]
-            new = sides[len('/dev/null and '):] if sides.startswith('/dev/null and ') else sides[(len(sides) + 5) // 2:]
-            yield renamed or _path(new)[2:], None, '!', ''
-        if raw.startswith('--- ') or raw.startswith('diff --git'):
+            target = sides[len('/dev/null and '):] if sides.startswith('/dev/null and ') else sides[(len(sides) + 5) // 2:]
+            yield renamed or _path(target)[2:], None, '!', ''
+        if raw.startswith('--- ') and old <= 0 or raw.startswith('diff --git'):
             continue
         hunk = _HUNK.match(raw)
         if hunk:
-            line = int(hunk.group(1))
+            line, old, new = int(hunk[2]), int(hunk[1] or 1), int(hunk[3] or 1)
             if path is not None:
                 yield path, line, '@', ''
             continue
         if path is None or not raw or raw[0] not in '+- ':
             continue
         kind, text = raw[0], raw[1:]
+        old, new = old - (kind != '+'), new - (kind != '-')
         if kind == '-':
             yield path, None, kind, text
             continue
