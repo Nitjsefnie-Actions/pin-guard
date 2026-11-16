@@ -132,6 +132,7 @@ screen cannot see.
 """
 import argparse
 import ast
+import codeop
 import os
 import re
 import subprocess
@@ -738,10 +739,15 @@ def _enumerated_invariants(rows):
         nul = max((i for i, (_, _, text) in enumerate(chunk) if '\x00' in text), default=-1)  # nothing before it parses
         # A PR hunk may begin in the previous function, before a complete definition.
         starts = [i for i, (_, _, text) in enumerate(chunk) if i > nul and (not i or text and not text[0].isspace())]
-        for offset in starts:
+        failing = False
+        for offset, end in zip(starts, starts[1:] + [len(chunk)]):
             try:
-                tree = _parse(textwrap.dedent('\n'.join(text for _, _, text in chunk[offset:])))
+                tree = None if failing or _fails_early(chunk, offset) else _parse(
+                    textwrap.dedent('\n'.join(text for _, _, text in chunk[offset:])))
             except SyntaxError:
+                tree = None
+            if tree is None:
+                failing = _parses_alone(chunk[offset:end])
                 continue
             path = chunk[offset][0]
             parsed.append((path, chunk[offset:], tree))
@@ -762,6 +768,31 @@ def _enumerated_invariants(rows):
         resolver.block(tree.body, env, found)
         exempt.update((path, lines[line - 1][1]) for line in found)
     return exempt
+
+
+def _fails_early(chunk, offset):
+    """Whether a prefix of chunk[offset:] fails short of its end, so the whole fails (Parser/pegen.c)."""
+    size = 1
+    while chunk[offset][2][:1].strip() and 4 * size < len(chunk) - offset:
+        try:
+            with warnings.catch_warnings():
+                warnings.simplefilter('ignore')
+                compile('\n'.join('' if text.isspace() else text for _, _, text in chunk[offset:offset + size]),
+                        '<unknown>', 'exec', ast.PyCF_ONLY_AST | vars(codeop)['PyCF_ALLOW_INCOMPLETE_INPUT'])
+        except SyntaxError as exc:
+            if type(exc).__name__ != '_IncompleteInputError':
+                return True
+        size *= 4
+    return False
+
+
+def _parses_alone(lines):
+    """Whether lines parse alone with no __future__ import: then the tail after them fails if the tail they begin does."""
+    try:
+        tree = _parse('\n'.join('' if text.isspace() else text for _, _, text in lines))
+    except SyntaxError:
+        return False
+    return not any(isinstance(node, ast.ImportFrom) and node.module == '__future__' for node in ast.walk(tree))
 
 
 def _python_assertion(text, bindings):
