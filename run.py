@@ -22,18 +22,16 @@ GitHub-surface failure — never the bare presence of candidates.
 """
 import json
 import os
-import re
 import subprocess
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent / 'scripts' / 'ci'))
 
+from pr_diff import diff_rows
 from review_submit import MARKER, current_bot_comments, plan_comments, submit_review
 from screen_run import ScreenOutcome, run_screen
 from status_comment import inert, upsert_status
-
-_HUNK = re.compile(r'^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@')
 
 
 def gh(*args, stdin=None):
@@ -57,21 +55,8 @@ def diffable_lines(repo, pr):
     pages = json.loads(gh('api', f'repos/{repo}/pulls/{pr}/files?per_page=100', '--paginate', '--slurp'))
     diffable = set()
     for item in (file for page in pages for file in page):
-        patch = item.get('patch')
-        if not patch:
-            continue
-        line = 0
-        for text in patch.splitlines():
-            header = _HUNK.match(text)
-            if header:
-                line = int(header.group(1))
-            elif text.startswith('+'):
-                diffable.add((item['filename'], line))
-                line += 1
-            elif text.startswith('-') or text.startswith('\\'):
-                continue
-            else:
-                line += 1
+        rows = diff_rows(f'+++ b/_\n{item.get("patch") or ""}')  # the listing's patch is the diff without its headers
+        diffable.update((item['filename'], line) for _, line, kind, _ in rows if kind == '+')
     return diffable
 
 
