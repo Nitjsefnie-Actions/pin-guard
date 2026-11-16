@@ -162,6 +162,7 @@ import contextlib
 import io
 import json
 import subprocess
+import urllib.parse
 from unittest import mock
 
 # Nitjsefnie/Overflow commit 64fe54d09db178d8ab5be8fb03b60d63463b0106, whole
@@ -549,9 +550,10 @@ class Main(unittest.TestCase):
                 if isinstance(blob, Exception):
                     raise blob
                 return json.dumps({'content': base64.b64encode(blob.encode()).decode(), 'encoding': 'base64'})
+            url = urllib.parse.urlsplit(args[1])  # as GitHub reads it: a raw ? or # ends the path
             if (len(args) == 4 and args[0] == 'api' and args[2:] == ('-H', 'Accept: application/vnd.github.raw')
-                    and args[1].startswith('repos/o/r/contents/') and args[1].endswith(f'?ref={SHA_HEAD}')):
-                text = contents[args[1][len('repos/o/r/contents/'):-len(f'?ref={SHA_HEAD}')]]
+                    and url.path.startswith('repos/o/r/contents/') and url.query == f'ref={SHA_HEAD}'):
+                text = contents[urllib.parse.unquote(url.path[len('repos/o/r/contents/'):])]
                 if isinstance(text, Exception):
                     raise text
                 return text
@@ -645,11 +647,11 @@ class Main(unittest.TestCase):
     def test_a_binary_test_file_is_screened_whole_and_a_quoted_one_screened(self):
         quoted = diff('tests/t\u00e9st\\x.py', f'x = 1{ENDS}assert v == "1.2.3"').replace('+++ b/tests/t\u00e9st\\x.py', '+++ "b/tests/t\\303\\251st\\\\x.py"')
         binary = ''.join(f'diff --git x\nBinary files /dev/null and {p} differ\n'
-                         for p in ('"b/tests/test\\nb.py"', 'b/tests/logo.png', '"b/tests/gone\\n.bin"', 'b/logo.png'))
+                         for p in ('"b/tests/test\\nb.py"', 'b/tests/lo#g?%41.png', '"b/tests/gone\\n.bin"', 'b/logo.png'))
         reads = 'PKG = json.loads((ROOT / "package.json").read_text())\n'
         code, out, err, _ = self.run_main(quoted + binary, {'package.json': '{"dependencies": {"a": "1.2.3"}}'}, {
             'tests/t\u00e9st\\x.py': reads, 'tests/test\nb.py': reads + '\x00\nassert v == "1.2.3"\n',
-            'tests/logo.png': '\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR "1.2.3"', 'tests/gone\n.bin': http_fail()})
+            'tests/lo#g?%41.png': '\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR "1.2.3"', 'tests/gone\n.bin': http_fail()})
         escaped = ENDS.encode('unicode_escape').decode()  # each printed row stays one line for the action that splits them
         self.assertEqual((code, out), (2, ['tests/test\\nb.py:3: assert v == "1.2.3"', f'tests/t\u00e9st\\x.py:1: x = 1{escaped}assert v == "1.2.3"']))
         self.assertEqual(err, ['could not screen tests/gone\\n.bin: HTTP 404: Not Found', self.SUMMARY_FOUND.format(2)])
