@@ -4,6 +4,8 @@ import json
 import re
 import subprocess
 
+from pr_diff import read_blobs
+
 
 _ACTION_PIN = re.compile(r'@([0-9a-f]{40})\b')
 _DOTTED = re.compile(r'\d+\.\d+')
@@ -187,11 +189,15 @@ def head_sources(gh, repo, sha, cannot_screen):
     pins, held, included = set(), {}, []
     blobs = {e.get('path', ''): e['sha'] for e in tree.get('tree', []) if e.get('type') == 'blob'}
     queue = [(path, source_kind(path)) for path in blobs if source_kind(path)]
+    try:  # one git fetch; the API reads each source when git cannot
+        texts = read_blobs(gh, repo, sorted({blobs[path] for path, _ in queue}))
+    except (subprocess.CalledProcessError, OSError):
+        texts = {}
     while queue:
         path, kind = queue.pop(0)
         try:
-            blob = json.loads(gh('api', f'repos/{repo}/git/blobs/{blobs[path]}'))
-            text = base64.b64decode(blob['content']).decode('utf-8', 'replace')
+            text = texts[blobs[path]] if blobs[path] in texts else base64.b64decode(
+                json.loads(gh('api', f'repos/{repo}/git/blobs/{blobs[path]}'))['content']).decode('utf-8', 'replace')
             held.setdefault(kind, set()).update(manifest_pins(kind, text))
         except subprocess.CalledProcessError as exc:
             cannot_screen(path, (exc.stderr or str(exc)).strip())

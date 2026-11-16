@@ -42,10 +42,12 @@ class ReadDiff(unittest.TestCase):
         repo.mkdir(parents=True)
         git('init', '-q')
         git('config', 'uploadpack.allowFilter', 'true')  # so the fetch is blobless and the diff fetches lazily
+        git('config', 'uploadpack.allowAnySHA1InWant', 'true')  # as GitHub serves a blob fetched by its SHA
         cls.merge_base = commit('start', {'a.py': 'a\n', 'gone.py': 'g\n'})
         cls.head = commit('head', {'a.py': 'a\nb\n', 'new.py': 'n\n', 'gone.py': '', 'moved.py': 'g\n',
                                    'té.py': 'x = 1\rassert v\n', 'b.py': 'b\0\n'})
         cls.base = commit('main', {'gone.py': 'G\n'})  # the base branch moved past the merge base
+        cls.blobs = [git('rev-parse', f'{cls.head}:{path}').strip() for path in ('a.py', 'té.py')]
 
     def gh(self, served=None, refusal='HTTP 406: Sorry, the diff exceeded the maximum number of files (300).', merge_base=None):
         answers = {('pr', 'view', '9', '-R', 'o/r', '--json', 'headRefOid'): json.dumps({'headRefOid': self.head}),
@@ -74,6 +76,11 @@ class ReadDiff(unittest.TestCase):
     def test_a_served_diff_is_kept_and_any_other_refusal_raised_without_a_fetch(self):
         self.assertEqual(mod.read_diff(self.gh(served='diff'), 'o/r', 9), (self.head, 'diff', {}))
         self.assertRaisesRegex(subprocess.CalledProcessError, "'pr', 'diff'", mod.read_diff, self.gh(refusal='HTTP 502: Bad Gateway'), 'o/r', 9)
+
+    def test_blobs_are_read_in_one_fetch_refused_whole_and_none_fetches_nothing(self):
+        self.assertEqual(mod.read_blobs(self.gh(), 'o/r', self.blobs), dict(zip(self.blobs, ('a\nb\n', 'x = 1\rassert v\n'))))
+        self.assertRaisesRegex(subprocess.CalledProcessError, "'fetch'", mod.read_blobs, self.gh(), 'o/r', [self.blobs[0], '0' * 40])
+        self.assertEqual(mod.read_blobs(None, 'o/r', []), {})
 
     def test_a_failed_fetch_is_raised_never_an_empty_diff(self):
         self.assertRaisesRegex(subprocess.CalledProcessError, "'fetch'", mod.read_diff, self.gh(merge_base='0' * 40), 'o/r', 9)

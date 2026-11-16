@@ -4,6 +4,7 @@ diff_rows(diff_text): its rows; output(argv): a command's stdout.
 On GitHub's HTTP 406 (a diff past its limits, such as 300 files) git diffs the merge base and head.
 """
 import base64
+import contextlib
 import json
 import os
 import re
@@ -24,17 +25,7 @@ def read_diff(gh, repo, pr) -> tuple[str, str, dict]:
             raise
     base = json.loads(gh('pr', 'view', str(pr), '-R', repo, '--json', 'baseRefOid'))['baseRefOid']
     merge_base = json.loads(gh('api', f'repos/{repo}/compare/{base}...{head}?per_page=1'))['merge_base_commit']['sha']
-    auth = base64.b64encode(f'x-access-token:{gh("auth", "token").strip()}'.encode()).decode()
-    # No ambient GIT_* variable, config or attributes file shapes the diff; the token rides in env, never argv.
-    env = {name: value for name, value in os.environ.items() if not name.startswith('GIT_')}
-    env.update({'GIT_CONFIG_NOSYSTEM': '1', 'GIT_CONFIG_GLOBAL': os.devnull, 'GIT_ATTR_NOSYSTEM': '1',
-                'GIT_TERMINAL_PROMPT': '0', 'GIT_CONFIG_COUNT': '3', 'GIT_CONFIG_KEY_0': 'http.extraHeader',
-                'GIT_CONFIG_VALUE_0': f'Authorization: basic {auth}', 'GIT_CONFIG_KEY_1': 'maintenance.auto',
-                'GIT_CONFIG_VALUE_1': 'false', 'GIT_CONFIG_KEY_2': 'core.attributesFile', 'GIT_CONFIG_VALUE_2': os.devnull})
-    with tempfile.TemporaryDirectory() as bare:
-        def git(*args):
-            return output(['git', '-C', bare, *args], env)
-        git('init', '-q', '--bare', '--template=')
+    with _bare(gh) as git:
         git('fetch', '-q', '--no-tags', '--depth=1', '--filter=blob:none', REMOTE.format(repo), merge_base, head)
         diff_text = git('diff', '--no-ext-diff', '--no-textconv', merge_base, head)
         raw = git('diff', '--raw', '-z', '--no-abbrev', '--no-renames', merge_base, head).split('\0')[:-1]
@@ -43,9 +34,34 @@ def read_diff(gh, repo, pr) -> tuple[str, str, dict]:
         return head, diff_text, {path: git('cat-file', 'blob', sha) for path, sha in blobs.items()}
 
 
-def output(argv, env=None):
+def read_blobs(gh, repo, shas) -> dict:
+    """{sha: text} of the blobs from one fetch; one unfetchable blob fails it."""
+    if not shas:
+        return {}
+    with _bare(gh) as git:
+        git('fetch', '-q', '--no-tags', '--no-write-fetch-head', '--stdin', REMOTE.format(repo), stdin='\n'.join(shas).encode())
+        return {sha: git('cat-file', 'blob', sha) for sha in shas}
+
+
+@contextlib.contextmanager
+def _bare(gh):
+    auth = base64.b64encode(f'x-access-token:{gh("auth", "token").strip()}'.encode()).decode()
+    # No ambient GIT_* variable, config or attributes file shapes a read; the token rides in env, never argv.
+    env = {name: value for name, value in os.environ.items() if not name.startswith('GIT_')}
+    env.update({'GIT_CONFIG_NOSYSTEM': '1', 'GIT_CONFIG_GLOBAL': os.devnull, 'GIT_ATTR_NOSYSTEM': '1',
+                'GIT_TERMINAL_PROMPT': '0', 'GIT_CONFIG_COUNT': '3', 'GIT_CONFIG_KEY_0': 'http.extraHeader',
+                'GIT_CONFIG_VALUE_0': f'Authorization: basic {auth}', 'GIT_CONFIG_KEY_1': 'maintenance.auto',
+                'GIT_CONFIG_VALUE_1': 'false', 'GIT_CONFIG_KEY_2': 'core.attributesFile', 'GIT_CONFIG_VALUE_2': os.devnull})
+    with tempfile.TemporaryDirectory() as bare:
+        def git(*args, stdin=None):
+            return output(['git', '-C', bare, *args], env, stdin)
+        git('init', '-q', '--bare', '--template=')
+        yield git
+
+
+def output(argv, env=None, stdin=None):
     """argv's stdout, line ends as written: text mode reads a lone \\r as one."""
-    done = subprocess.run(argv, capture_output=True, check=False, env=env)
+    done = subprocess.run(argv, capture_output=True, check=False, env=env, input=stdin)
     out, err = (text.decode('utf-8', 'replace') for text in (done.stdout, done.stderr))
     if done.returncode:
         raise subprocess.CalledProcessError(done.returncode, argv, out, err)

@@ -162,6 +162,7 @@ import contextlib
 import io
 import json
 import subprocess
+from unittest import mock
 
 # Nitjsefnie/Overflow commit 64fe54d09db178d8ab5be8fb03b60d63463b0106, whole
 # (`git show 64fe54d0 --format=`): a Dependabot-shaped base bump that also
@@ -530,7 +531,7 @@ def http_fail(stderr='HTTP 404: Not Found'):
 class Main(unittest.TestCase):
     """main() end to end with the gh calls answered by a double that refuses anything it does not model."""
 
-    def run_main(self, diff_text, blobs, contents, truncated=False):
+    def run_main(self, diff_text, blobs, contents, truncated=False, fetch=None):
         calls = []
         tree = [{'path': path, 'type': 'blob', 'sha': f'blob-{n}'} for n, path in enumerate(blobs)]
         by_sha = {f'blob-{n}': blobs[path] for n, path in enumerate(blobs)}
@@ -556,14 +557,16 @@ class Main(unittest.TestCase):
                 return text
             raise AssertionError(f'unmodeled gh call {args}')
 
+        def fake_blobs(gh, repo, shas):  # one git fetch, failed whole by any blob it cannot read
+            calls.append(('read_blobs', gh is fake_gh and repo, *shas))
+            if any(isinstance(by_sha[sha], Exception) for sha in shas):
+                raise fetch or http_fail()
+            return {sha: by_sha[sha] for sha in shas}
+
         out, err = io.StringIO(), io.StringIO()
-        saved = mod._gh
-        setattr(mod, '_gh', fake_gh)
-        try:
-            with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
-                code = mod.main(['--repo', 'o/r', '--pr', '9'])
-        finally:
-            setattr(mod, '_gh', saved)
+        with (mock.patch.object(mod, '_gh', fake_gh), mock.patch.dict(mod.head_sources.__globals__, read_blobs=fake_blobs),
+              contextlib.redirect_stdout(out), contextlib.redirect_stderr(err)):
+            code = mod.main(['--repo', 'o/r', '--pr', '9'])
         return code, out.getvalue().splitlines(), err.getvalue().splitlines(), calls
 
     DOCKERFILE = f'FROM node:24.21.0-bookworm-slim@sha256:{DIGEST} AS deps\nFROM deps AS build\n'
@@ -599,7 +602,7 @@ class Main(unittest.TestCase):
         reqs = 'assert pkg["dependencies"]["a"] == "1.2.3"'
         code, out, err, _ = self.run_main(
             diff('tests/test_pkg.py', reqs), {'package.json': '{"dependencies": ', 'Dockerfile': http_fail()},
-            {'tests/test_pkg.py': 'PKG = json.loads((ROOT / "package.json").read_text())\n'})
+            {'tests/test_pkg.py': 'PKG = json.loads((ROOT / "package.json").read_text())\n'}, fetch=FileNotFoundError(2, 'git'))
         self.assertEqual(code, 2)
         self.assertEqual(out, [])
         self.assertEqual(err, [
@@ -662,10 +665,11 @@ class Main(unittest.TestCase):
 
     def test_workflow_sha_pins_still_come_from_the_head(self):
         wf = f'      - uses: o/claim@{SHA} # v1.0.0\n      - run: pip install ruff==0.8.4\n'
-        code, out, _, _ = self.run_main(
+        code, out, _, calls = self.run_main(
             diff('tests/test_wf.py', f'PIN = "{SHA}"', 'assert "ruff==0.8.4" in WF'),
             {'.github/workflows/c.yml': wf},
             {'tests/test_wf.py': 'WF = (ROOT / ".github/workflows/c.yml").read_text()\n'})
+        self.assertEqual([c for c in calls if c[0] == 'read_blobs' or 'git/blobs/' in c[1]], [('read_blobs', 'o/r', 'blob-0')])  # one fetch
         self.assertEqual(code, 1)
         self.assertEqual(out, [f'tests/test_wf.py:1: PIN = "{SHA}"', 'tests/test_wf.py:2: assert "ruff==0.8.4" in WF'])
 
