@@ -14,7 +14,8 @@ them stay. This is a screen, not a verdict: it lists candidates; a reader
 judges each one against the rule.
 
 A test file is anything under a `tests`/`test`/`__tests__` directory or named
-`test_*`, `*_test.*`, `*.test.*` or `*.spec.*`. Its added lines are grouped into
+`test_*`, `*_test.*`, `*.test.*` or `*.spec.*`; in one the diff shows only as binary, every head line
+counts as added. Its added lines are grouped into
 statements (an assertion or assignment's open brackets outside strings join
 the lines that follow, up to ten lines, extended through standalone string
 literals). A test file is screened against a pin source only when it reads that source: its text
@@ -121,7 +122,7 @@ screen's own suite whose path is only a name bound elsewhere (`WF = '...'`,
 then `open(WF)`). It also lists a
 quoted version that merely equals a pinned one, for the reader to judge. So an
 empty list is not a proof. A pin source it cannot fetch or parse, or a test file
-it cannot fetch or the diff shows only as binary, is named on stderr as `could not screen <path>: <why>` and is
+it cannot fetch, is named on stderr as `could not screen <path>: <why>` and is
 never counted as screened. Test fragments that ast cannot parse use the text
 matcher.
 
@@ -737,6 +738,8 @@ def _enumerated_invariants(rows):
         chunks.append(chunk)
     parsed, assignments = [], {}
     for chunk in chunks:
+        if any('\x00' in text for _, _, text in chunk):
+            continue  # no source holding a NUL parses, and retrying a binary file's every row is quadratic
         # A PR hunk may begin in the previous function, before a complete definition.
         starts = [0] + [i for i, (_, _, text) in enumerate(chunk) if i and text and not text[0].isspace()]
         for offset in starts:
@@ -1244,15 +1247,14 @@ def _screen(args):
         return cache[path] is not None and couples(cache[path], kind, included if kind == 'gitlab-ci' else ())
 
     rows = list(diff_rows(diff_text))
-    for path in dict.fromkeys(p for p, _, k, _ in rows if k == '!' and is_test_file(p)):
-        _cannot_screen(unscreened, path, 'the diff shows it only as binary')
+    binary = {p for p, _, k, _ in rows if k == '!'}  # its diff shows no line, so every head line is screened as added
     context = []
-    for path in dict.fromkeys(p for p, _, k, _ in rows if k == '+' and is_test_file(p)):
+    for path in dict.fromkeys(p for p, _, k, _ in rows if k in '+!' and is_test_file(p)):
         reads_source(path, 'workflow')
         if cache[path] is not None:
-            lines = cache[path].removesuffix('\n').split('\n')
+            lines, mark = cache[path].removesuffix('\n').split('\n'), '+' if path in binary else ' '
             context.append(f'+++ b/{path}\n@@ -1,{len(lines)} +1,{len(lines)} @@\n'
-                           + ''.join(f' {line}\n' for line in lines))
+                           + ''.join(f'{mark}{line}\n' for line in lines))
     found = findings(''.join(context) + diff_text, pins, None, held, reads_source)
     for path, line, text in found:
         print(f'{path}:{line}: {text}'.translate(_ONE_LINE))
