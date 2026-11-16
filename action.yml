@@ -20,7 +20,7 @@ runs:
     - name: Screen the pull request's head
       shell: bash
       # Inputs are data: none becomes shell program text. The action reads
-      # the PR at the head, by API or by git fetch; it never checks out or
+      # the PR at the head, by API or git fetch; it never checks out or
       # executes pull-request code, so a fork's pull request screens too.
       env:
         PIN_GUARD_FAIL_ON_CANDIDATES: ${{ inputs.fail-on-candidates }}
