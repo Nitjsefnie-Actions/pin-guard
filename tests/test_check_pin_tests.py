@@ -1404,11 +1404,12 @@ class WorkflowRunArtifactTests(unittest.TestCase):
             self.assertEqual([n for _, n, _ in mod.findings(diff('tests/test_workflow.py', *rows), (), lambda p: True)], listed)
 
     def test_a_chunk_holding_a_nul_byte_is_never_parsed(self):  # retrying a binary file's every row is quadratic
-        saved, mod._parse = mod._parse, None
+        saved = mod._parse
+        setattr(mod, '_parse', None)
         try:
             self.assertEqual(mod._enumerated_invariants(list(mod.diff_rows('+++ b/t.py\n@@ -0,0 +1,2 @@\n+\x00\n+x = 1\n'))), set())
         finally:
-            mod._parse = saved
+            setattr(mod, '_parse', saved)
 
     def test_pattern_bindings_and_filename_alias_filters(self):
         source = self.invariant('(ROOT / ".github/workflows").glob(PATTERN)', 'PATTERN = "*.yml"\n')
