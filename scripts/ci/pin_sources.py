@@ -1,8 +1,11 @@
 """Pin-source readers; check_pin_tests.py documents each source."""
+import base64
 import json
 import re
+import subprocess
 
 
+_ACTION_PIN = re.compile(r'@([0-9a-f]{40})\b')
 _DOTTED = re.compile(r'\d+\.\d+')
 _ARG_REF = re.compile(r'\$\{(\w+)(?::-([^}]*))?\}|\$(\w+)')
 _DEP_KEYS = ('dependencies', 'devDependencies', 'peerDependencies', 'optionalDependencies', 'engines')
@@ -171,3 +174,44 @@ def manifest_pins(kind, text):
         for line in lines:  # a tool name or a `ref:`/`path:` word never starts with a digit
             pins.update(w.removeprefix('v') for w in line.split() if _DOTTED.match(w.removeprefix('v')))
     return pins
+
+
+def head_sources(gh, repo, sha, cannot_screen):
+    """(SHAs the workflows pin, {source kind: pinned literals}, GitLab CI includes) from the head's tree.
+
+    A tree GitHub truncated, or a source it cannot fetch, parse or find, is named to
+    cannot_screen(what, why)."""
+    tree = json.loads(gh('api', f'repos/{repo}/git/trees/{sha}?recursive=1'))
+    if tree.get('truncated'):
+        cannot_screen(f'the tree at {sha}', 'GitHub truncated the recursive listing')
+    pins, held, included = set(), {}, []
+    blobs = {e.get('path', ''): e['sha'] for e in tree.get('tree', []) if e.get('type') == 'blob'}
+    queue = [(path, source_kind(path)) for path in blobs if source_kind(path)]
+    while queue:
+        path, kind = queue.pop(0)
+        try:
+            blob = json.loads(gh('api', f'repos/{repo}/git/blobs/{blobs[path]}'))
+            text = base64.b64decode(blob['content']).decode('utf-8', 'replace')
+            held.setdefault(kind, set()).update(manifest_pins(kind, text))
+        except subprocess.CalledProcessError as exc:
+            cannot_screen(path, (exc.stderr or str(exc)).strip())
+            continue
+        except (CannotScreen, KeyError, ValueError) as exc:
+            cannot_screen(path, str(exc))
+            continue
+        if kind == 'workflow':
+            pins.update(_ACTION_PIN.findall(text))
+        for pattern in gitlab_ci(text)[1] if kind == 'gitlab-ci' else ():
+            parts = re.split(r'(\*\*/|\*+)', pattern)
+            if sum('*' in part for part in parts) > 3:
+                cannot_screen(pattern, f'included by {path}, with more than 3 wildcards')
+                continue
+            glob = re.compile(''.join({'**/': '(?:.*/)?', '*': '[^/]*'}.get(part, '.*' if '*' in part else re.escape(part))
+                                      for part in parts))
+            found = [p for p in blobs if glob.fullmatch(p)]
+            if not found:
+                cannot_screen(pattern, f'included by {path}, not in the tree')
+            new = [p for p in found if p not in included and source_kind(p) != 'gitlab-ci']
+            included += new
+            queue += [(p, 'gitlab-ci') for p in new]
+    return pins, held, included
