@@ -640,15 +640,15 @@ class Main(unittest.TestCase):
         self.assertEqual(err, ['could not screen Dockerfile: HTTP 404: Not Found', self.SUMMARY_FOUND.format(1)])
 
     def test_a_binary_test_file_is_screened_whole_and_a_quoted_one_screened(self):
-        quoted = diff('tests/t\u00e9st_x.py', f'x = 1{ENDS}assert v == "1.2.3"').replace('+++ b/tests/t\u00e9st_x.py', '+++ "b/tests/t\\303\\251st_x.py"')
+        quoted = diff('tests/t\u00e9st\\x.py', f'x = 1{ENDS}assert v == "1.2.3"').replace('+++ b/tests/t\u00e9st\\x.py', '+++ "b/tests/t\\303\\251st\\\\x.py"')
         binary = ''.join(f'diff --git x\nBinary files /dev/null and {p} differ\n'
-                         for p in ('b/tests/test_b.py', 'b/tests/logo.png', '"b/tests/gone\\n.bin"', 'b/logo.png'))
+                         for p in ('"b/tests/test\\nb.py"', 'b/tests/logo.png', '"b/tests/gone\\n.bin"', 'b/logo.png'))
         reads = 'PKG = json.loads((ROOT / "package.json").read_text())\n'
         code, out, err, _ = self.run_main(quoted + binary, {'package.json': '{"dependencies": {"a": "1.2.3"}}'}, {
-            'tests/t\u00e9st_x.py': reads, 'tests/test_b.py': reads + '\x00\nassert v == "1.2.3"\n',
+            'tests/t\u00e9st\\x.py': reads, 'tests/test\nb.py': reads + '\x00\nassert v == "1.2.3"\n',
             'tests/logo.png': '\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR "1.2.3"', 'tests/gone\n.bin': http_fail()})
         escaped = ENDS.encode('unicode_escape').decode()  # each printed row stays one line for the action that splits them
-        self.assertEqual((code, out), (2, ['tests/test_b.py:3: assert v == "1.2.3"', f'tests/t\u00e9st_x.py:1: x = 1{escaped}assert v == "1.2.3"']))
+        self.assertEqual((code, out), (2, ['tests/test\\nb.py:3: assert v == "1.2.3"', f'tests/t\u00e9st\\x.py:1: x = 1{escaped}assert v == "1.2.3"']))
         self.assertEqual(err, ['could not screen tests/gone\\n.bin: HTTP 404: Not Found', self.SUMMARY_FOUND.format(2)])
 
     def test_head_context_numbers_lines_as_git_does(self):  # a form feed ends a line for str.splitlines() alone
