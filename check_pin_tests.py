@@ -144,7 +144,7 @@ import warnings
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), 'scripts', 'ci'))
 
 from pin_sources import CannotScreen, dockerfile_pins, gitlab_ci, manifest_pins, source_kind  # pylint: disable=unused-import
-from pr_diff import read_diff
+from pr_diff import diff_rows, read_diff
 
 
 def _parse(text):
@@ -155,7 +155,6 @@ def _parse(text):
         return ast.parse(text)
 
 
-_HUNK = re.compile(r'^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@')
 _ACTION_PIN = re.compile(r'@([0-9a-f]{40})\b')
 _SHA = re.compile(r'\b([0-9a-f]{40})\b')
 _WITH_KEY = re.compile(r"""\[\s*["']with["']\s*\]|\.with\b|\.get\(\s*["']with["']""")
@@ -192,32 +191,6 @@ _TEST_NAME = re.compile(r'(^|/)(test_[^/]*|[^/]*_test\.[^/]*|[^/]*\.(test|spec)\
 
 def is_test_file(path):
     return bool(_TEST_DIR.search(path) or _TEST_NAME.search(path))
-
-
-def _lines(diff_text):
-    """Yield hunk rows as (path, line, kind, text); '@' marks a hunk boundary."""
-    path, line = None, 0
-    for raw in diff_text.splitlines():
-        if raw.startswith('+++ '):
-            target = raw[4:]
-            path = target[2:] if target.startswith('b/') else None
-            continue
-        if raw.startswith('--- ') or raw.startswith('diff --git'):
-            continue
-        hunk = _HUNK.match(raw)
-        if hunk:
-            line = int(hunk.group(1))
-            if path is not None:
-                yield path, line, '@', ''
-            continue
-        if path is None or not raw or raw[0] not in '+- ':
-            continue
-        kind, text = raw[0], raw[1:]
-        if kind == '-':
-            yield path, None, kind, text
-            continue
-        yield path, line, kind, text
-        line += 1
 
 
 def _reads(node):
@@ -1126,7 +1099,7 @@ def findings(diff_text, pinned=(), reads_workflows=None, literals=None, reads_so
     the workflows and the file's lines in the diff answer the rest. A pin
     counts only in a file that reads its source, so fixture data in a parser's
     tests is not flagged. These are candidates for a reader."""
-    rows = list(_lines(diff_text))
+    rows = list(diff_rows(diff_text))
     pins = set(pinned)
     held = {kind: set(values) for kind, values in (literals or {}).items()}
     texts = {}
@@ -1269,7 +1242,7 @@ def _screen(args):
         return cache[path] is not None and couples(cache[path], kind, included if kind == 'gitlab-ci' else ())
 
     context = []
-    for path in dict.fromkeys(p for p, _, k, _ in _lines(diff_text) if k == '+' and is_test_file(p)):
+    for path in dict.fromkeys(p for p, _, k, _ in diff_rows(diff_text) if k == '+' and is_test_file(p)):
         reads_source(path, 'workflow')
         if cache[path] is not None:
             lines = cache[path].splitlines()

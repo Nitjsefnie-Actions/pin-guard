@@ -1,14 +1,17 @@
-"""read_diff(gh, repo, pr): the PR's head and diff, plus the head's changed files when git made the diff.
+"""read_diff(gh, repo, pr): the PR's head and diff, plus the head's changed files when git made the diff;
+diff_rows(diff_text): its hunk rows.
 
 On GitHub's HTTP 406 (a diff past its limits, such as 300 files) git diffs the merge base and head.
 """
 import base64
 import json
 import os
+import re
 import subprocess
 import tempfile
 
 REMOTE = 'https://github.com/{}.git'
+_HUNK = re.compile(r'^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@')
 
 
 def read_diff(gh, repo, pr) -> tuple[str, str, dict]:
@@ -38,3 +41,29 @@ def read_diff(gh, repo, pr) -> tuple[str, str, dict]:
         blobs = {path: meta.split()[3] for meta, path in zip(raw[::2], raw[1::2])
                  if meta.split()[1] in ('100644', '100755')}
         return head, diff_text, {path: git('cat-file', 'blob', sha) for path, sha in blobs.items()}
+
+
+def diff_rows(diff_text):
+    """Yield hunk rows as (path, line, kind, text); '@' marks a hunk boundary."""
+    path, line = None, 0
+    for raw in diff_text.splitlines():
+        if raw.startswith('+++ '):
+            target = raw[4:]
+            path = target[2:] if target.startswith('b/') else None
+            continue
+        if raw.startswith('--- ') or raw.startswith('diff --git'):
+            continue
+        hunk = _HUNK.match(raw)
+        if hunk:
+            line = int(hunk.group(1))
+            if path is not None:
+                yield path, line, '@', ''
+            continue
+        if path is None or not raw or raw[0] not in '+- ':
+            continue
+        kind, text = raw[0], raw[1:]
+        if kind == '-':
+            yield path, None, kind, text
+            continue
+        yield path, line, kind, text
+        line += 1
