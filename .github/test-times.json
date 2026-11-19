@@ -11,13 +11,13 @@
       "tests/test_status_comment.py": 0.01
     },
     "ubuntu-latest": {
-      "tests/test_action.py": 0.02,
-      "tests/test_check_pin_tests.py": 2.32,
-      "tests/test_gitlab_ci.py": 0.03,
-      "tests/test_pr_diff.py": 0.22,
-      "tests/test_review_submit.py": 0.01,
-      "tests/test_screen_run.py": 0.0,
-      "tests/test_status_comment.py": 0.02
+      "tests/test_action.py": 0.03,
+      "tests/test_check_pin_tests.py": 5.17,
+      "tests/test_gitlab_ci.py": 0.05,
+      "tests/test_pr_diff.py": 0.49,
+      "tests/test_review_submit.py": 0.04,
+      "tests/test_screen_run.py": 0.01,
+      "tests/test_status_comment.py": 0.05
     }
   }
 }
