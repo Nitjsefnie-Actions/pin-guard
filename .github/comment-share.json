@@ -3,14 +3,6 @@
     851,
     1267
   ],
-  ".github/scripts/diff_coverage.py": [
-    4662,
-    11570
-  ],
-  ".github/scripts/ratchet_thresholds.py": [
-    611,
-    2664
-  ],
   ".github/workflows/actionlint.yml": [
     3365,
     5368
@@ -23,17 +15,9 @@
     1770,
     2671
   ],
-  ".github/workflows/coverage-comment.yml": [
-    3309,
-    9789
-  ],
   ".github/workflows/pr-gate.yml": [
     357,
     1025
-  ],
-  ".github/workflows/ratchet-push.yml": [
-    3341,
-    14067
   ],
   ".github/workflows/scorecard.yml": [
     593,

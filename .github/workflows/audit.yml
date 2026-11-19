@@ -88,9 +88,9 @@ jobs:
         # manifest added at root or under .github/workflows joins this audit
         # without editing this workflow. Each manifest gets its OWN pip-audit
         # invocation, because this repository's manifests are never installed
-        # together — each is consumed by its own workflow (tests.yml lifts
+        # together — each is consumed by its own install (tests.yml lifts
         # its blocks out of requirements.txt with awk and installs each with
-        # --require-hashes, the suites job installs the root
+        # --require-hashes, a local run installs the root
         # requirements-test.txt the same way, and the install step above
         # installs requirements-pip-audit.txt) — so each manifest is audited
         # the way its own install consumes it. The siblings' one

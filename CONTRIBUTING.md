@@ -53,14 +53,13 @@ python3 -m pytest tests/ -q --tb=short -ra
 ```
 
 The [tests workflow](.github/workflows/tests.yml) also runs Ruff,
-pycodestyle, pylint and pyright, and gates coverage on the floor recorded in
-`.github/ci-thresholds.json`. When a green tests run on main measures
-coverage above the recorded measurement by more than the hysteresis in
-`.github/scripts/ratchet_thresholds.py`, the
-[ratchet push workflow](.github/workflows/ratchet-push.yml) raises that floor
-in an automated commit. The size records (`.github/size-baseline.json`)
-ride the pull request that changes the tree: when a change tightens a
-record, commit the tightened entry with it. The comment-share records
+pycodestyle, pylint and pyright, and runs the suite through
+[test-ratchet](https://github.com/Nitjsefnie-Actions/test-ratchet), whose
+`report` job gates coverage against the floor recorded in
+`.github/ci-thresholds.json` and, on a push to main, commits the raised
+records with the test times in `.github/test-times.json`. The size records
+(`.github/size-baseline.json`) ride the pull request that changes the tree:
+when a change tightens a record, commit the tightened entry with it. The comment-share records
 (`.github/comment-share.json`) are tightened on each push to main by the
 [comment share workflow](.github/workflows/comment-share.yml), which
 commits any changed entry itself, or leaves it to the next push's run when
@@ -80,8 +79,8 @@ breaking change carries `!`. Review checks that each type and `!` match the
 change, and a wrong message is reworded before the merge.
 
 Messages automation writes follow it too: Dependabot's are
-`ci(deps): bump …`, and the coverage ratchet's is
-`chore(ratchet): raise the coverage floor (automated)`.
+`ci(deps): bump …`, and test-ratchet's is
+`chore(ratchet): update the test-ratchet records (automated)`.
 
 ## Issues
 
