@@ -90,7 +90,7 @@ jobs:
         # invocation, because this repository's manifests are never installed
         # together — each is consumed by its own workflow (tests.yml lifts
         # its blocks out of requirements.txt with awk and installs each with
-        # --require-hashes, the suites job installs the root
+        # --require-hashes, the dev setup installs the root
         # requirements-test.txt the same way, and the install step above
         # installs requirements-pip-audit.txt) — so each manifest is audited
         # the way its own install consumes it. The siblings' one
