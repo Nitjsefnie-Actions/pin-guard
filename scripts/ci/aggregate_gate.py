@@ -4,7 +4,7 @@ import json
 import os
 import sys
 
-LEGS = ('suites', 'shellcheck')
+LEGS = ('plan', 'suites', 'report', 'shellcheck')
 
 
 def main() -> int:
