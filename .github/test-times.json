@@ -6,7 +6,8 @@
         0.04
       ],
       "tests/test_check_pin_tests.py": [
-        3.0
+        3.0,
+        1.25
       ],
       "tests/test_gitlab_ci.py": [
         0.02
@@ -30,7 +31,8 @@
       ],
       "tests/test_check_pin_tests.py": [
         3.29,
-        4.81
+        4.81,
+        2.22
       ],
       "tests/test_gitlab_ci.py": [
         0.05
