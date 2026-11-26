@@ -21,6 +21,7 @@ if git show "${remote}:.gitleaks.toml" > "$config" 2>/dev/null \
 else
   printf '[extend]\nuseDefault = true\n' > "$config"
 fi
+rm -f -- .gitleaksignore
 git show "${remote}:.gitleaksignore" > .gitleaksignore 2>/dev/null || rm -f -- .gitleaksignore
 printf '* diff\n' > "$(git rev-parse --git-path info/attributes)"
 ./gitleaks detect --verbose --redact --ignore-gitleaks-allow --config "$config"
