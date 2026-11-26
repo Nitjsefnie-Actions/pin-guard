@@ -14,9 +14,9 @@
 # pyright resolve -- astroid, dill, isort, mccabe, mypy_extensions, nodeenv,
 # platformdirs, tomlkit and typing_extensions. Every block lists every
 # artifact its closure ships, so it resolves on whichever platform lifts it.
-# PyYAML ships no cp315 wheel, so its block carries the 6.0.3 sdist beside
-# the cp313 wheel: under 3.15 hash-checking mode matches the sdist and pip
-# builds it, and on a wheel-bearing interpreter the wheel still wins.
+# PyYAML 6.0.4 ships cp315 wheels for both runner platforms, so the
+# binary-only install below matches a wheel there; its block also carries
+# the sdist, which keeps an interpreter without a wheel resolvable.
 #
 # The `pip` entry in .github/dependabot.yml watches this directory, so a
 # version bump arrives as a pull request with the --hash lines rewritten
