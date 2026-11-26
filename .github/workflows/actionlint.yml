@@ -37,9 +37,9 @@ on:
     # Deny-list, not an allow-list: under an allow-list, a new path this gate
     # should read silently stops triggering it. The job reads every
     # .github/workflows/*.yml, .github/workflows/requirements.txt (the
-    # hash-pinned zizmor install), and action.yml (lint command), so none of
-    # those belongs in a skip list. The four names below are documentation
-    # nothing in this job reads.
+    # hash-pinned zizmor install), the .github/scripts wrappers, and
+    # action.yml (lint command), so none belongs in a skip list. The
+    # four names below are documentation nothing in this job reads.
     paths-ignore: [CONTRIBUTING.md, CODE_OF_CONDUCT.md, SECURITY.md, LICENSE]
   # Deliberately unfiltered by path. This job is a REQUIRED status check on
   # main, and GitHub never reports a required check whose workflow did not
@@ -82,7 +82,7 @@ jobs:
 
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
-          python-version: '3.15'
+          python-version: "3.15"
 
       - name: Install actionlint
         # Downloaded and checksum-verified rather than piped from the
@@ -90,8 +90,8 @@ jobs:
         # that URL serves at run time.
         run: |
           tarball="actionlint_${PIN_GUARD_ACTIONLINT_VERSION}_linux_amd64.tar.gz"
-          curl -fsSL --retry 3 -o "$tarball" \
-            "https://github.com/${PIN_GUARD_ACTIONLINT_REPO}/releases/download/v${PIN_GUARD_ACTIONLINT_VERSION}/${tarball}"
+          .github/scripts/download.sh \
+            "https://github.com/${PIN_GUARD_ACTIONLINT_REPO}/releases/download/v${PIN_GUARD_ACTIONLINT_VERSION}/${tarball}" "$tarball"
           echo "${PIN_GUARD_ACTIONLINT_SHA256}  ${tarball}" | sha256sum -c -
           tar -xzf "$tarball" actionlint
           ./actionlint --version
@@ -100,12 +100,14 @@ jobs:
         id: install_zizmor
         # --require-hashes verifies every artifact against the sha256 in
         # requirements.txt: a version pin alone still installs whatever
-        # artifact the index serves for that version. The `--upgrade pip`
+        # artifact the index serves for that version. --only-binary keeps a
+        # missing wheel a loud failure, not a source build.
+        # The `--upgrade pip`
         # line is gone for the same reason -- it installed whatever bytes
         # the index served, unpinned, and the runner's preinstalled pip is
         # far newer than --require-hashes needs.
         run: |
-          python3 -m pip install --require-hashes -r .github/workflows/requirements.txt
+          .github/scripts/retry.sh python3 -m pip install --require-hashes --only-binary=:all: -r .github/workflows/requirements.txt
 
       - name: actionlint
         id: actionlint

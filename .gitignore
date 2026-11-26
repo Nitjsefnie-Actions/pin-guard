@@ -34,6 +34,10 @@
 !.github/workflows/test-ratchet-comment.yml
 !.github/workflows/requirements.txt
 !.github/workflows/requirements-pip-audit.txt
+!.github/workflows/release-dispatch.yml
+!.github/scripts/
+.github/scripts/*
+!.github/scripts/*.sh
 !check_pin_tests.py
 !action.yml
 !run.py
@@ -46,6 +50,7 @@ tests/*
 !tests/test_action.py
 !tests/test_gitlab_ci.py
 !tests/test_pr_diff.py
+!tests/test_release_dispatch.py
 !scripts/
 scripts/*
 !scripts/ci/
@@ -57,5 +62,6 @@ scripts/ci/*
 !scripts/ci/pin_sources.py
 !scripts/ci/pr_diff.py
 !scripts/ci/py_tails.py
+!scripts/ci/release_dispatch.py
 !pytest.ini
 !requirements-test.txt

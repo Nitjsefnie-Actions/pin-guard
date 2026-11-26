@@ -48,6 +48,7 @@ jobs:
       # Writing the analysis results is the whole point; everything else
       # stays read-only.
       security-events: write
+      actions: read
       contents: read
 
     strategy:
