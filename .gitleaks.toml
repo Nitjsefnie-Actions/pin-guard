@@ -1,0 +1,7 @@
+# Reviewed default rules. Both secret scans read this file from the base
+# branch's revision, never from the change under judgement, so a pull
+# request cannot narrow the ruleset for its own run; the mechanism is
+# .github/scripts/gitleaks_scan.sh. Nothing here replaces the default
+# rules: the [extend] line keeps them as the gate.
+[extend]
+useDefault = true

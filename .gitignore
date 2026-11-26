@@ -1,5 +1,6 @@
 *
 !.gitignore
+!.gitleaks.toml
 !LICENSE
 !README.md
 !CODE_OF_CONDUCT.md
@@ -51,6 +52,7 @@ tests/*
 !tests/test_gitlab_ci.py
 !tests/test_pr_diff.py
 !tests/test_release_dispatch.py
+!tests/test_gitleaks_scan.py
 !scripts/
 scripts/*
 !scripts/ci/
