@@ -55,7 +55,7 @@ jobs:
       # instead of hanging.
 
       # No gate-base-freshness or commit-scope step, unlike the siblings: each
-      # port would cut the caveats that make it safe to fit a new file's 15%.
+      # port would cut the notes on what it cannot see to fit a new file's 15%.
 
       - name: Check every shell file
         # Recurse so adding a nested test helper cannot silently escape lint.
@@ -78,18 +78,17 @@ jobs:
         # condition, fallback or error-swallowing suffix belongs here. The
         # log is public: --verbose names findings, --redact masks them.
         # --ignore-gitleaks-allow: an inline allow cannot hide a finding.
-        # No --config and no .gitleaks.toml: the default ruleset ran clean
-        # against this repository's full history, so an allowlist here would
-        # be a way to silence a future finding nobody reviewed.
+        # gitleaks reads its config, ignore file and binary classification
+        # from the scanned tree; all three come from the base branch here, so
+        # the tree cannot silence its own finding.
         # In this job rather than a new one: `shellcheck` is already a
         # required status context running on every pull request and every
         # push to main, both unfiltered, so the scan gates exactly the commits
         # a standalone scan job would — a new job would be a new required
-        # context, which means editing the ruleset, and actionlint is
-        # disqualified as the host because its push trigger is paths:-filtered
-        # to workflow files, so a secret committed to check_pin_tests.py on
-        # main would never start the scan.
-        run: ./gitleaks detect --verbose --redact --ignore-gitleaks-allow
+        # context, which means editing the ruleset.
+        env:
+          PIN_GUARD_BASE_REF: ${{ github.base_ref || github.event.repository.default_branch }}
+        run: .github/scripts/gitleaks_scan.sh "$PIN_GUARD_BASE_REF"
 
   plan:
     runs-on: ubuntu-latest
