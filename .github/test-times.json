@@ -12,8 +12,14 @@
       "tests/test_gitlab_ci.py": [
         0.02
       ],
+      "tests/test_gitleaks_scan.py": [
+        4.64
+      ],
       "tests/test_pr_diff.py": [
         1.03
+      ],
+      "tests/test_release_dispatch.py": [
+        1.28
       ],
       "tests/test_review_submit.py": [
         0.01
@@ -37,8 +43,14 @@
       "tests/test_gitlab_ci.py": [
         0.05
       ],
+      "tests/test_gitleaks_scan.py": [
+        1.02
+      ],
       "tests/test_pr_diff.py": [
         0.22
+      ],
+      "tests/test_release_dispatch.py": [
+        0.55
       ],
       "tests/test_review_submit.py": [
         0.01
