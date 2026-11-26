@@ -8,10 +8,9 @@ name: tests
 # main, commits the raised records. The test-ratchet comment workflow
 # comments for fork pull requests.
 #
-# The static checks' toolchain is ruff, pylint, pycodestyle and pyright from
-# .github/workflows/requirements.txt, each block lifted out with awk and
-# installed with --require-hashes: a version pin alone still installs
-# whatever bytes the index serves.
+# The static checks' toolchain -- ruff, pylint, pycodestyle, pyright -- comes
+# from .github/workflows/requirements.txt, each block lifted out with awk and
+# hash-pinned (the install step says why).
 
 on:
   push:
@@ -55,22 +54,23 @@ jobs:
       # the job timeout, while a missing binary fails the step in seconds
       # instead of hanging.
 
+      # No gate-base-freshness or commit-scope step, unlike the siblings: each
+      # is about half comments, which comment-ratchet refuses in a changed
+      # unrecorded file over 15%.
+
       - name: Check every shell file
         # Recurse so adding a nested test helper cannot silently escape lint.
         run: |
-          find tests -type f -name '*.sh' -exec shellcheck {} +
+          find tests .github/scripts -type f -name '*.sh' -exec shellcheck {} +
 
       - name: Download gitleaks and verify its digest
-        # Last in the job: the three checks above refuse in seconds, while
-        # this downloads a binary and walks the full history, so a head that
-        # is stale, mis-scoped or badly linted never pays for the scan.
-        # Checksum-verified rather than piped from an install script: `curl |
-        # bash` would make this job trust whatever that URL serves at run
-        # time. The digest is from the release's own checksums file, and a
-        # version bump moves it together with secrets.yml's copy of this
-        # step.
+        # Last in the job: the check above refuses in seconds, while this
+        # downloads a binary and walks the full history. Identical to
+        # secrets.yml's step: checksum-verified from the release's own
+        # file, never piped from an install script, and a version bump moves
+        # both copies.
         run: |
-          curl --connect-timeout 5 --max-time 120 -fsSLO https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz
+          .github/scripts/download.sh https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz gitleaks_8.30.1_linux_x64.tar.gz
           echo '551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb  gitleaks_8.30.1_linux_x64.tar.gz' | sha256sum -c -
           tar xzf gitleaks_8.30.1_linux_x64.tar.gz gitleaks
 
@@ -78,6 +78,7 @@ jobs:
         # Bare on purpose: this step's exit status IS the gate, so no
         # condition, fallback or error-swallowing suffix belongs here. The
         # log is public: --verbose names findings, --redact masks them.
+        # --ignore-gitleaks-allow: an inline allow cannot hide a finding.
         # No --config and no .gitleaks.toml: the default ruleset ran clean
         # against this repository's full history, so an allowlist here would
         # be a way to silence a future finding nobody reviewed.
@@ -89,7 +90,7 @@ jobs:
         # disqualified as the host because its push trigger is paths:-filtered
         # to workflow files, so a secret committed to check_pin_tests.py on
         # main would never start the scan.
-        run: ./gitleaks detect --verbose --redact
+        run: ./gitleaks detect --verbose --redact --ignore-gitleaks-allow
 
   plan:
     runs-on: ubuntu-latest
@@ -132,8 +133,9 @@ jobs:
           # `python3` resolves here: the runner places GITHUB_PATH entries --
           # setup-python's among them -- ahead of the job's path variable
           # when it builds a step's environment, so an interpreter put on
-          # PATH through GITHUB_ENV is shadowed by it.
-          python-version: '3.15'
+          # PATH through GITHUB_ENV is shadowed by it. One cell: action.yml
+          # sets 3.15 up for its own steps, so a 3.14 leg proves nothing.
+          python-version: "3.15"
 
       - name: Check no tracked file carries a merge-conflict marker
         # A conflict marker is text that looks like prose in a Markdown
@@ -144,10 +146,9 @@ jobs:
         # are matched in the shapes git writes them: `<<<<<<< ` and `>>>>>>> `
         # carry the label after seven characters, and the separator is exactly
         # seven `=`; diff3's extra `||||||| base` line changes nothing, because
-        # the other three are still written. This job rather than the
-        # actionlint one because this workflow's push trigger is unfiltered,
-        # so it runs for the documentation-only commit that carries the marker
-        # as well as for the code change. Explicit `shell: bash` adds
+        # the other three are still written. This job, not actionlint: this
+        # workflow's push trigger is unfiltered, so a documentation-only
+        # commit runs it. Explicit `shell: bash` adds
         # --noprofile --norc; pipefail is its only operative delta -- the
         # body already guards `git grep` with `|| found=$?`, so no pipe can
         # turn "no match" into a failure the implicit shell would not have.
@@ -248,10 +249,9 @@ jobs:
       - uses: Nitjsefnie-Actions/test-ratchet/report@96562a47e9b7fe74b55cc70a4636d1b5d7b542e2 # v2.4.2
         with:
           github-token: ${{ github.token }}
+          # The matrix OS alone; the README spelling reseeds times.
           cell: ubuntu-latest
           times: .github/test-times.json
-          hysteresis: '1.5'
-          gap: '1.5'
           push-key: ${{ secrets.MASTER_PUSH_DEPLOY_KEY }}
 
   aggregate:
