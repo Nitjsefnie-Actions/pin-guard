@@ -32,15 +32,10 @@ on:
     # Default branch only: a pull-request head already gets one run from
     # the `pull_request` event below, and an unfiltered `push` schedules
     # the same commit a second time under a different ref, which the
-    # `concurrency` group cannot collapse.
+    # `concurrency` group cannot collapse. No path filter either: the
+    # release dispatch waits for this required check on main's tip, so a
+    # documentation-only push that skipped it would refuse the release.
     branches: [main]
-    # Deny-list, not an allow-list: under an allow-list, a new path this gate
-    # should read silently stops triggering it. The job reads every
-    # .github/workflows/*.yml, .github/workflows/requirements.txt (the
-    # hash-pinned zizmor install), the .github/scripts wrappers, and
-    # action.yml (lint command), so none belongs in a skip list. The
-    # four names below are documentation nothing in this job reads.
-    paths-ignore: [CONTRIBUTING.md, CODE_OF_CONDUCT.md, SECURITY.md, LICENSE]
   # Deliberately unfiltered by path. This job is a REQUIRED status check on
   # main, and GitHub never reports a required check whose workflow did not
   # run -- it waits for it forever. A path filter here therefore does not

@@ -55,8 +55,7 @@ jobs:
       # instead of hanging.
 
       # No gate-base-freshness or commit-scope step, unlike the siblings: each
-      # is about half comments, which comment-ratchet refuses in a changed
-      # unrecorded file over 15%.
+      # port would cut the caveats that make it safe to fit a new file's 15%.
 
       - name: Check every shell file
         # Recurse so adding a nested test helper cannot silently escape lint.
@@ -185,8 +184,8 @@ jobs:
         run: |
           awk '/^ruff==/{f=1} f{print; if ($0 !~ /\\$/) exit}' .github/workflows/requirements.txt > "$RUNNER_TEMP/ruff.txt"
           awk '/^pylint==/{f=1} f' .github/workflows/requirements.txt > "$RUNNER_TEMP/checks.txt"
-          python3 -m pip install --require-hashes --only-binary=:all: -r "$RUNNER_TEMP/ruff.txt"
-          python3 -m pip install --require-hashes --only-binary=:all: -r "$RUNNER_TEMP/checks.txt"
+          .github/scripts/retry.sh python3 -m pip install --require-hashes --only-binary=:all: -r "$RUNNER_TEMP/ruff.txt"
+          .github/scripts/retry.sh python3 -m pip install --require-hashes --only-binary=:all: -r "$RUNNER_TEMP/checks.txt"
 
       - name: Lint the screen
         # py_compile above refuses a file only for a SyntaxError: E9 and
