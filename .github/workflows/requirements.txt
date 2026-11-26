@@ -15,8 +15,8 @@
 # platformdirs, tomlkit and typing_extensions. Every block lists every
 # artifact its closure ships, so it resolves on whichever platform lifts it.
 # PyYAML 6.0.4 ships cp315 wheels for both runner platforms, so the
-# binary-only install below matches a wheel there; its block also carries
-# the sdist, which keeps an interpreter without a wheel resolvable.
+# binary-only installs below match a wheel there; the block carries the
+# sdist only because it lists every artifact the release ships.
 #
 # The `pip` entry in .github/dependabot.yml watches this directory, so a
 # version bump arrives as a pull request with the --hash lines rewritten
