@@ -106,6 +106,19 @@ class Scan(unittest.TestCase):
         self.assertFalse(self.ignore.exists(), self.ignore)
         self.assertFalse((self.work / '.gitleaksignore').exists())
 
+    def test_a_symlinked_tree_ignore_file_is_replaced_not_written_through(self):
+        for base_ignore in ('# base-ignore\n', None):
+            with self.subTest(base_ignore=base_ignore):
+                self.publish({'.gitleaks.toml': BASE_CONFIG, '.gitleaksignore': base_ignore,
+                              'sentinel': 'kept\n'})
+                (self.work / '.gitleaksignore').unlink(missing_ok=True)
+                (self.work / '.gitleaksignore').symlink_to('sentinel')
+                self.args.unlink(missing_ok=True)
+                self.assertEqual(self.run_scan().returncode, 0)
+                self.assertEqual((self.work / 'sentinel').read_text(), 'kept\n')
+                self.assertTrue(self.args.exists(), 'the scan never ran')
+                self.assertFalse((self.work / '.gitleaksignore').is_symlink())
+
     def test_every_file_is_forced_to_diff_as_text(self):
         self.publish({'.gitleaks.toml': BASE_CONFIG, '.gitattributes': 'a.py -diff\n'})
         self.assertEqual(self.run_scan().returncode, 0)
