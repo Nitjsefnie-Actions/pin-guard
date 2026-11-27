@@ -1,7 +1,7 @@
-# Reviewed default rules. Both secret scans read this file from the base
-# branch's revision, never from the change under judgement, so a pull
-# request cannot narrow the ruleset for its own run; the mechanism is
-# .github/scripts/gitleaks_scan.sh. Nothing here replaces the default
-# rules: the [extend] line keeps them as the gate.
+# Reviewed default rules. Nitjsefnie-Actions/secret-scan reads this file from
+# the commit the change is judged against: a pull request's base, a push's
+# previous tip, otherwise the default branch's tip. With useDefault = true it
+# runs the default rules without the allowlists that exempt a file by its path
+# alone.
 [extend]
 useDefault = true
