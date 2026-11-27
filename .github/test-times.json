@@ -13,7 +13,8 @@
         0.02
       ],
       "tests/test_gitleaks_scan.py": [
-        4.64
+        4.64,
+        2.47
       ],
       "tests/test_pr_diff.py": [
         1.03
