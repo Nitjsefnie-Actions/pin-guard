@@ -52,8 +52,14 @@ jobs:
       # the job timeout, while a missing binary fails the step in seconds
       # instead of hanging.
 
-      # No gate-base-freshness or commit-scope step, unlike the siblings: each
-      # port would cut the notes on what it cannot see to fit a new file's 15%.
+      # Fail a pull request whose head lacks a main commit touching a file a
+      # required check reads. Only pull requests and main run it: a manual run
+      # of another branch is not a pull request this check judges.
+      - uses: Nitjsefnie-Actions/freshness@5edc2a45ff894cf49c5cc8d293bbae0af33507d4 # v1.0.0
+        if: github.event_name == 'pull_request' || github.ref_name == github.event.repository.default_branch
+
+      # No commit-scope step, unlike the siblings: its port would cut the
+      # notes on what it cannot see to fit a new file's 15%.
 
       - name: Check every shell file
         # Recurse so adding a nested test helper cannot silently escape lint.
